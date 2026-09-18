@@ -1,0 +1,1 @@
+{"name":"ya-nerd-station-editor","version":"0.1.0","private":true,"type":"module","license":"MIT","scripts":{"dev":"vite --host 127.0.0.1 --port 4197 --strictPort","build":"vite build","test":"node tools/test.mjs","db:generate":"drizzle-kit generate"},"dependencies":{"vite":"8.2.2","esbuild":"^0.28.2","drizzle-orm":"^0.45.2"},"devDependencies":{"drizzle-kit":"^0.31.10"}}

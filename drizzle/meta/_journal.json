@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1789703434957,
+      "tag": "0000_high_sleepwalker",
+      "breakpoints": true
+    }
+  ]
+}
