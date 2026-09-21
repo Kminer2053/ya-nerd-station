@@ -15,7 +15,7 @@
 ![역](https://img.shields.io/badge/실내지도-46개%20KTX역-D4A843)
 ![MIT](https://img.shields.io/badge/license-MIT-green)
 
-**[편집기 열기](https://toolkit.yanerdstation.kr)** · **[프로젝트 소개](https://yanerdstation.kr)** · **[서울역 프로토타입](https://seoul.yanerdstation.kr)** · **[본체 리포](https://github.com/Kminer2053/digitaltwin-station)** (private)
+**[편집기 열기](https://toolkit.yanerdstation.kr)** · **[프로젝트 소개](https://yanerdstation.kr)** · **[서울역 프로토타입](https://seoul.yanerdstation.kr/seoul)**
 
 </div>
 
