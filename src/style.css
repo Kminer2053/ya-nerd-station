@@ -5,3 +5,5 @@ button,.button,input,select,textarea,.project-actions button,.project-actions .b
 .panel-title p,.hint{font-size:14px;line-height:1.7}.sections>a,.sections #help,.project-footer,.project-footer a,.project-footer p,.project-footer strong,#sceneStatus,#pickStatus,.scene-key,#recordList small{font-size:12px}
 .form-actions{display:flex;gap:8px;margin:18px 0}.id{display:block;font-size:12px;overflow-wrap:anywhere;margin:10px 0}.coords{min-width:0}.coords input{min-width:0}.project-actions{flex-wrap:wrap}.sections{min-width:86px}.sections>button{line-height:1.5}.scene-key{flex-wrap:wrap}
 @media(min-width:1151px){main{grid-template-columns:100px 310px minmax(0,1fr)}}.sections>button{word-break:keep-all}.logo small{font-size:12px;letter-spacing:.8px}
+
+.to-console{color:#e9f5d0;border:1px solid #6e8b72;border-radius:6px;padding:8px 12px;font-size:13px;text-decoration:none;white-space:nowrap}.to-console:hover{background:#244b36}

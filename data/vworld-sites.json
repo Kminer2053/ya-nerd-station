@@ -1,0 +1,2900 @@
+{
+ "fetched_at": "2026-09-27T05:52:02.236Z",
+ "source": "VWorld 웹 지도 실내 목록 https://map.vworld.kr/dtkmap/indoorServices.do (type=3d, q=역 이름) · 타일셋 https://cdn.vworld.kr/TDServer/services/map4/7Iuk64K0/<uid>/tileset.json",
+ "rule": "이름이 VWorld 목록과 정확히 일치(○○역KTX)하거나 고속철도 결과가 하나일 때만, 타일셋이 있고 중심이 그 안에 있을 때만 연결",
+ "results": [
+  {
+   "name": "서울역",
+   "query": "서울역",
+   "status": 200,
+   "response_sha256": "74347741c8235708796934c3d00e7993dd5cf9d7f40714ace8adb58a4a982323",
+   "candidates": [
+    {
+     "uid": "S202103",
+     "kname": "서울역KTX",
+     "class": "교통시설 > 철도/지하철 > 2호/4호/경의/공항선/고속철도",
+     "address": "서울특별시 용산구 동자동 43-205",
+     "x": 126.97082,
+     "y": 37.55363,
+     "z": 27.2
+    },
+    {
+     "uid": "S21SL017",
+     "kname": "서울역사박물관",
+     "class": "건물 > 공공문화시설",
+     "address": "서울특별시 종로구 신문로2가 2-1",
+     "x": 126.97048,
+     "y": 37.57049,
+     "z": 37.9
+    }
+   ],
+   "match": {
+    "uid": "S202103",
+    "kname": "서울역KTX",
+    "class": "교통시설 > 철도/지하철 > 2호/4호/경의/공항선/고속철도",
+    "address": "서울특별시 용산구 동자동 43-205",
+    "centre": [
+     126.97082,
+     37.55363,
+     27.2
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 52.9
+     },
+     {
+      "raw": "4F",
+      "floor": "4F",
+      "ord": 2,
+      "z": 50
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 3,
+      "z": 44.2
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 4,
+      "z": 38.1
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 5,
+      "z": 30.1
+     },
+     {
+      "raw": "B1",
+      "floor": "B1",
+      "ord": 6,
+      "z": 25.9
+     },
+     {
+      "raw": "B2",
+      "floor": "B2",
+      "ord": 7,
+      "z": 14
+     },
+     {
+      "raw": "B3",
+      "floor": "B3",
+      "ord": 8,
+      "z": 7.5
+     },
+     {
+      "raw": "B6",
+      "floor": "B6",
+      "ord": 9,
+      "z": -10.7
+     },
+     {
+      "raw": "B7",
+      "floor": "B7",
+      "ord": 10,
+      "z": -18.3
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 148294,
+    "sha256": "c8ded8a63113c31357b9de0d86a8f2f6d26ad573df1feb5f3c97d67b1215473f",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "대전역",
+   "query": "대전역",
+   "status": 200,
+   "response_sha256": "63c11905ec6792a446b83ee001da4243889c4dd60e43940d8785956e8f0f794d",
+   "candidates": [
+    {
+     "uid": "S201801",
+     "kname": "대전역KTX",
+     "class": "교통시설 > 철도/지하철 > 고속철도",
+     "address": "대전광역시 동구 중앙로 215",
+     "x": 127.43459,
+     "y": 36.33223,
+     "z": 53.67
+    },
+    {
+     "uid": "S202212",
+     "kname": "서대전역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "대전광역시 중구 오류동 74",
+     "x": 127.40315,
+     "y": 36.32246,
+     "z": 51.66
+    }
+   ],
+   "match": {
+    "uid": "S201801",
+    "kname": "대전역KTX",
+    "class": "교통시설 > 철도/지하철 > 고속철도",
+    "address": "대전광역시 동구 중앙로 215",
+    "centre": [
+     127.43459,
+     36.33223,
+     53.67
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 74.33
+     },
+     {
+      "raw": "5F",
+      "floor": "5F",
+      "ord": 1,
+      "z": 71.66
+     },
+     {
+      "raw": "4F",
+      "floor": "4F",
+      "ord": 2,
+      "z": 68.37
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 3,
+      "z": 63.48
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 4,
+      "z": 60.34
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 5,
+      "z": 55.69
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 62256,
+    "sha256": "2dbaa7df85c19be29710903270bca4ffdd5c3274f77ea33503ec0b5781aec7a4",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "강릉역",
+   "query": "강릉역",
+   "status": 200,
+   "response_sha256": "fef2f473505531ad09ebf29f1d65f152a81030401e8f92aa4c0ab9d3c5645e04",
+   "candidates": [
+    {
+     "uid": "S201704",
+     "kname": "강릉역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "강원특별자치도 강릉시 용지로 176",
+     "x": 128.89959,
+     "y": 37.76447,
+     "z": 12
+    }
+   ],
+   "match": {
+    "uid": "S201704",
+    "kname": "강릉역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "강원특별자치도 강릉시 용지로 176",
+    "centre": [
+     128.89959,
+     37.76447,
+     12
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 33.26
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 2,
+      "z": 15.09
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 3,
+      "z": 15.09
+     },
+     {
+      "raw": "B1",
+      "floor": "B1",
+      "ord": 4,
+      "z": 6.99
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 12047,
+    "sha256": "613a73cfacfb003875ad2006274d32c28bc7bdacd83fc0d05bd7726aa200de1f",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "계룡역",
+   "query": "계룡역",
+   "status": 200,
+   "response_sha256": "6fa3ef1041fdc0f74b4d1700e4e600cfad73761027131e26f1a16ef2b2edd7d6",
+   "candidates": [
+    {
+     "uid": "S202301",
+     "kname": "계룡역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "충청남도 계룡시 두마면 두계리 136-149",
+     "x": 127.26643,
+     "y": 36.27243,
+     "z": 100.8
+    }
+   ],
+   "match": {
+    "uid": "S202301",
+    "kname": "계룡역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "충청남도 계룡시 두마면 두계리 136-149",
+    "centre": [
+     127.26643,
+     36.27243,
+     100.8
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 115.91
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 2,
+      "z": 111.01
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 3,
+      "z": 101.98
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 3987,
+    "sha256": "b1f0468e2607db8a6a1b1fb089c3ef1c6f15b7b118b6438ca064b96bbed85505",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "곡성역",
+   "query": "곡성역",
+   "status": 200,
+   "response_sha256": "543f8a240d19a2f3604bb6705f7e18c15e4ec410f4506203eedd4019d56214c7",
+   "candidates": [
+    {
+     "uid": "S202311",
+     "kname": "곡성역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "전라남도 곡성군 곡성읍 읍내리 53-6",
+     "x": 127.3054737,
+     "y": 35.2826496,
+     "z": 60.82
+    }
+   ],
+   "match": {
+    "uid": "S202311",
+    "kname": "곡성역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "전라남도 곡성군 곡성읍 읍내리 53-6",
+    "centre": [
+     127.3054737,
+     35.2826496,
+     60.82
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 74.58
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 2,
+      "z": 69.96
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 3,
+      "z": 63.62
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 4,
+      "z": 63.03
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 2842,
+    "sha256": "eafd4beb979f6adec5d8bb93d9e16a9cc4ea6ee22614127f86fdca4b5ce5688f",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "공주역",
+   "query": "공주역",
+   "status": 200,
+   "response_sha256": "9315eacb582679c42ef7c168d34c9d779a0d706b155d85b20b8501aa0e2de9b9",
+   "candidates": [
+    {
+     "uid": "S202205",
+     "kname": "공주역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "충청남도 공주시 이인면 신영리 167-1",
+     "x": 127.09657,
+     "y": 36.33222,
+     "z": 45.26
+    }
+   ],
+   "match": {
+    "uid": "S202205",
+    "kname": "공주역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "충청남도 공주시 이인면 신영리 167-1",
+    "centre": [
+     127.09657,
+     36.33222,
+     45.26
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 70
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 2,
+      "z": 63.39
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 3,
+      "z": 52.38
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 4,
+      "z": 47.42
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 2418,
+    "sha256": "4a9be65ae20dacf0b3b070b499db363417f70880a2ecc5ea6c912611f8f2a759",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "광명역",
+   "query": "광명역",
+   "status": 200,
+   "response_sha256": "6f561fb301d3249d369edaebd7bb0e911533bd71879591f96e8f7931a7385dfe",
+   "candidates": [
+    {
+     "uid": "S202001",
+     "kname": "광명역KTX",
+     "class": "교통시설 > 철도/지하철 > 고속철도",
+     "address": "경기도 광명시 일직동 276-8",
+     "x": 126.8847,
+     "y": 37.4163,
+     "z": 10
+    }
+   ],
+   "match": {
+    "uid": "S202001",
+    "kname": "광명역KTX",
+    "class": "교통시설 > 철도/지하철 > 고속철도",
+    "address": "경기도 광명시 일직동 276-8",
+    "centre": [
+     126.8847,
+     37.4163,
+     10
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 57.9
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 1,
+      "z": 29.88
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 2,
+      "z": 27.14
+     },
+     {
+      "raw": "B1",
+      "floor": "B1",
+      "ord": 3,
+      "z": 20.76
+     },
+     {
+      "raw": "B2",
+      "floor": "B2",
+      "ord": 4,
+      "z": 12.35
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 77452,
+    "sha256": "940d2d176e5aa97ce7ee24ae9890e6680917e727d45f62cf0f96ccf41504f117",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "광주송정역",
+   "query": "광주송정역",
+   "status": 200,
+   "response_sha256": "c79b4994de5c472e5041f941d1410efd541b6c8ae3bc936321f74ddcd012dd79",
+   "candidates": [
+    {
+     "uid": "S201804",
+     "kname": "광주송정역KTX",
+     "class": "교통시설 > 철도/지하철 > 고속철도",
+     "address": "광주광역시 광산구 상무대로 201",
+     "x": 126.79025,
+     "y": 35.13775,
+     "z": 15.2
+    }
+   ],
+   "match": {
+    "uid": "S201804",
+    "kname": "광주송정역KTX",
+    "class": "교통시설 > 철도/지하철 > 고속철도",
+    "address": "광주광역시 광산구 상무대로 201",
+    "centre": [
+     126.79025,
+     35.13775,
+     15.2
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 36.33
+     },
+     {
+      "raw": "4F",
+      "floor": "4F",
+      "ord": 1,
+      "z": 31.3
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 2,
+      "z": 26.58
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 3,
+      "z": 26.59
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 4,
+      "z": 16.99
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 73682,
+    "sha256": "154d1ab9aaf485bcdf24ea343970864f7bcc63e3e58e23a358e270869b2b7c43",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "구례구역",
+   "query": "구례구역",
+   "status": 200,
+   "response_sha256": "2dd6bd0d7fa62601a6244cc50647532779b5509ba29cbd92ed0b0dfb22e0d6b4",
+   "candidates": [
+    {
+     "uid": "S202312",
+     "kname": "구례구역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "전라남도 순천시 황전면 선변리 850-2",
+     "x": 127.4514526,
+     "y": 35.1638454,
+     "z": 34.99
+    }
+   ],
+   "match": {
+    "uid": "S202312",
+    "kname": "구례구역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "전라남도 순천시 황전면 선변리 850-2",
+    "centre": [
+     127.4514526,
+     35.1638454,
+     34.99
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 42.47
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 2,
+      "z": 37.56
+     },
+     {
+      "raw": "B1",
+      "floor": "B1",
+      "ord": 3,
+      "z": 30.81
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 2176,
+    "sha256": "f85010e63261403e9f5aba779c42d73cc172eae75669f0a89c93e587b905f278",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "김천구미역",
+   "query": "김천구미역",
+   "status": 200,
+   "response_sha256": "c23cb7705dc49aa554cbcad40340492a57dd9043455e76e9ec546215d54f13d2",
+   "candidates": [
+    {
+     "uid": "S202003",
+     "kname": "김천구미역KTX",
+     "class": "교통시설 > 철도/지하철 > 고속철도",
+     "address": "경상북도 김천시 남면 옥산리",
+     "x": 128.18083,
+     "y": 36.11305,
+     "z": 72.6
+    }
+   ],
+   "match": {
+    "uid": "S202003",
+    "kname": "김천구미역KTX",
+    "class": "교통시설 > 철도/지하철 > 고속철도",
+    "address": "경상북도 김천시 남면 옥산리",
+    "centre": [
+     128.18083,
+     36.11305,
+     72.6
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 84.12
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 1,
+      "z": 80.91
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 2,
+      "z": 71.81
+     },
+     {
+      "raw": "B1",
+      "floor": "B1",
+      "ord": 3,
+      "z": 68.88
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 48309,
+    "sha256": "4fb56034ba26f5be6063e800b93d5a43a415785862f9bbefbacb59a9b92aaba5",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "나주역",
+   "query": "나주역",
+   "status": 200,
+   "response_sha256": "ad5431028742169ea6a917820c5f2c2e26d60daabd5e7ae745a0f7e0893555c9",
+   "candidates": [
+    {
+     "uid": "S202211",
+     "kname": "나주역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "전라남도 나주시 송월동 409-1",
+     "x": 126.71733,
+     "y": 35.01403,
+     "z": 18.58
+    }
+   ],
+   "match": {
+    "uid": "S202211",
+    "kname": "나주역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "전라남도 나주시 송월동 409-1",
+    "centre": [
+     126.71733,
+     35.01403,
+     18.58
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 40.76
+     },
+     {
+      "raw": "4F",
+      "floor": "4F",
+      "ord": 2,
+      "z": 33.11
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 3,
+      "z": 30.11
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 4,
+      "z": 30.11
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 5,
+      "z": 21.51
+     },
+     {
+      "raw": "B1",
+      "floor": "B1",
+      "ord": 6,
+      "z": 16.49
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 4214,
+    "sha256": "28249ec7c28c76dd007460adad1b7d7451c180e18e1457c272237c53f3b9c140",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "남원역",
+   "query": "남원역",
+   "status": 200,
+   "response_sha256": "bfbea0acf8c1a0441e85ff800d7af0b3302300a7286aa39bca9034bc73b082a9",
+   "candidates": [
+    {
+     "uid": "S202310",
+     "kname": "남원역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "전북특별자치도 남원시 신정동 540-1",
+     "x": 127.360709,
+     "y": 35.4108926,
+     "z": 107.1
+    }
+   ],
+   "match": {
+    "uid": "S202310",
+    "kname": "남원역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "전북특별자치도 남원시 신정동 540-1",
+    "centre": [
+     127.360709,
+     35.4108926,
+     107.1
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 120.68
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 2,
+      "z": 116.71
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 3,
+      "z": 109.48
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 4035,
+    "sha256": "b2897e79757df63260a3849975b0d57b2be308d744a6eeb398727cc3eb71af21",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "논산역",
+   "query": "논산역",
+   "status": 200,
+   "response_sha256": "0a74cea49587a819653b50626298c6e9efd39979fdf055867719dacc151660c1",
+   "candidates": [
+    {
+     "uid": "S202302",
+     "kname": "논산역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "충청남도 논산시 반월동 33-59",
+     "x": 127.0923024,
+     "y": 36.2067121,
+     "z": 9.21
+    }
+   ],
+   "match": {
+    "uid": "S202302",
+    "kname": "논산역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "충청남도 논산시 반월동 33-59",
+    "centre": [
+     127.0923024,
+     36.2067121,
+     9.21
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 22.14
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 2,
+      "z": 17.97
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 3,
+      "z": 9.7
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 3759,
+    "sha256": "65a0f4ca8f5ccaabb8fa5b45f58e6cf5ca09c01fca184e0b78e2e642b5c8d828",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "동대구역",
+   "query": "동대구역",
+   "status": 200,
+   "response_sha256": "9fffb3f6d2bf33c1843067a0a28627266710a866eb8f199e7183114887d1ae01",
+   "candidates": [
+    {
+     "uid": "S201806",
+     "kname": "동대구역KTX",
+     "class": "교통시설 > 기차역 > 경부선",
+     "address": "대구광역시 동구 신암동 294",
+     "x": 128.62872,
+     "y": 35.87958,
+     "z": 51.4
+    }
+   ],
+   "match": {
+    "uid": "S201806",
+    "kname": "동대구역KTX",
+    "class": "교통시설 > 기차역 > 경부선",
+    "address": "대구광역시 동구 신암동 294",
+    "centre": [
+     128.62872,
+     35.87958,
+     51.4
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 82.69
+     },
+     {
+      "raw": "5F",
+      "floor": "5F",
+      "ord": 1,
+      "z": 77.2
+     },
+     {
+      "raw": "4F",
+      "floor": "4F",
+      "ord": 2,
+      "z": 71.64
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 3,
+      "z": 66.57
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 4,
+      "z": 58.74
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 101565,
+    "sha256": "12460f1b26013dea079b877a5d36841dd7a78e62d9e61fe1af644d5964d40aa4",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "마산역",
+   "query": "마산역",
+   "status": 200,
+   "response_sha256": "ecd7fa8be886d10cf33c561f78eb5780e49f87109b2d92d5e07e4e377e4890f5",
+   "candidates": [
+    {
+     "uid": "S202217",
+     "kname": "마산역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "경상남도 창원시 마산회원구 합성동 764-3",
+     "x": 128.57697663190154,
+     "y": 35.23642122078848,
+     "z": 30.3
+    }
+   ],
+   "match": {
+    "uid": "S202217",
+    "kname": "마산역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "경상남도 창원시 마산회원구 합성동 764-3",
+    "centre": [
+     128.57697663190154,
+     35.23642122078848,
+     30.3
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 53.72
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 2,
+      "z": 42.47
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 3,
+      "z": 42.42
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 4,
+      "z": 33.76
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 3976,
+    "sha256": "b3571514223f85fc9b95d9aee9d41d79d9f08fece9362a627aa5d01d16fdb47e",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "목포역",
+   "query": "목포역",
+   "status": 200,
+   "response_sha256": "b114470378b3ce156ff9e50f1069f819f202cfa586d9c989f9313648d8f7ec3e",
+   "candidates": [
+    {
+     "uid": "S202309",
+     "kname": "목포역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "전라남도 목포시 호남동 1-864",
+     "x": 126.38719,
+     "y": 34.7914118,
+     "z": 5.21
+    }
+   ],
+   "match": {
+    "uid": "S202309",
+    "kname": "목포역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "전라남도 목포시 호남동 1-864",
+    "centre": [
+     126.38719,
+     34.7914118,
+     5.21
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 18.27
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 2,
+      "z": 14.07
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 3,
+      "z": 5.95
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 3351,
+    "sha256": "d430de5826a316c6c8e058e20f913af29f4c4d9738675260397ca83477d1c780",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "부산역",
+   "query": "부산역",
+   "status": 200,
+   "response_sha256": "5f87692b83e0abb2caba24bd0117dd84012a29855551a86c782cb87d98f30ecc",
+   "candidates": [
+    {
+     "uid": "S201807",
+     "kname": "부산역KTX",
+     "class": "교통시설 > 기차역 > 경부선",
+     "address": "부산광역시 동구 초량동 1187-21",
+     "x": 129.0423073,
+     "y": 35.11477134,
+     "z": 3.6
+    }
+   ],
+   "match": {
+    "uid": "S201807",
+    "kname": "부산역KTX",
+    "class": "교통시설 > 기차역 > 경부선",
+    "address": "부산광역시 동구 초량동 1187-21",
+    "centre": [
+     129.0423073,
+     35.11477134,
+     3.6
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 32.82
+     },
+     {
+      "raw": "4F",
+      "floor": "4F",
+      "ord": 1,
+      "z": 18.28
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 2,
+      "z": 12.5
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 3,
+      "z": 5.38
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 101535,
+    "sha256": "61723afda3a07305ab36d610c95da058d9c26eae753d4b89afc068b7cb95b027",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "부전역",
+   "query": "부전역",
+   "status": 200,
+   "response_sha256": "5b19c458e9d4b69d007785c9d40d8b7940feddfef14dbe250dab0c178928e31e",
+   "candidates": [
+    {
+     "uid": "S202410",
+     "kname": "부전역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "부산광역시 부산진구 부전동 280-57",
+     "x": 129.059196,
+     "y": 35.164035,
+     "z": 24.127
+    }
+   ],
+   "match": {
+    "uid": "S202410",
+    "kname": "부전역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "부산광역시 부산진구 부전동 280-57",
+    "centre": [
+     129.059196,
+     35.164035,
+     24.127
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 44.84
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 2,
+      "z": 33.33
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 3,
+      "z": 24.52
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 2885,
+    "sha256": "576883abcf93f24ff084e2f51fd28007373cef29920d7205d6a24b739ea3621f",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "상봉역",
+   "query": "상봉역",
+   "status": 200,
+   "response_sha256": "8c5ad572fe431aa8419614b198e47ecbf3a387fe7dd80941e3afac25999fa8f7",
+   "candidates": [
+    {
+     "uid": "S202303",
+     "kname": "상봉역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "서울특별시 중랑구 상봉동 100-9",
+     "x": 127.0856509,
+     "y": 37.5970155,
+     "z": 20.68
+    }
+   ],
+   "match": {
+    "uid": "S202303",
+    "kname": "상봉역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "서울특별시 중랑구 상봉동 100-9",
+    "centre": [
+     127.0856509,
+     37.5970155,
+     20.68
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 30.71
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 2,
+      "z": 26.22
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 3,
+      "z": 22.78
+     },
+     {
+      "raw": "B1",
+      "floor": "B1",
+      "ord": 4,
+      "z": 17.87
+     },
+     {
+      "raw": "B2",
+      "floor": "B2",
+      "ord": 5,
+      "z": 7.91
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 6533,
+    "sha256": "c81b8d8ecdd2397f5ed03bde0dd03013f6d993a690071155ea96415f42c9d697",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "서대구역",
+   "query": "서대구역",
+   "status": 200,
+   "response_sha256": "c68ed5ebff90a524f444efc9458cad42fcbe40de85a85229eb5c5c9fa4db01f9",
+   "candidates": [
+    {
+     "uid": "S202207",
+     "kname": "서대구역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "대구광역시 서구 이현동 232-1",
+     "x": 128.54013,
+     "y": 35.88155,
+     "z": 27.26
+    }
+   ],
+   "match": {
+    "uid": "S202207",
+    "kname": "서대구역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "대구광역시 서구 이현동 232-1",
+    "centre": [
+     128.54013,
+     35.88155,
+     27.26
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 52.1
+     },
+     {
+      "raw": "4F",
+      "floor": "4F",
+      "ord": 2,
+      "z": 46.58
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 3,
+      "z": 41.2
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 4,
+      "z": 30.02
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 3314,
+    "sha256": "db6bcb8bb0109fd1b6b2f9ca9aef004eb7282aedd22decf5e8364dea9afd3eeb",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "서대전역",
+   "query": "서대전역",
+   "status": 200,
+   "response_sha256": "9c8a142d376e156b664628dd569ef60e68c5aca52877da30ba3efd6efa06076e",
+   "candidates": [
+    {
+     "uid": "S202212",
+     "kname": "서대전역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "대전광역시 중구 오류동 74",
+     "x": 127.40315,
+     "y": 36.32246,
+     "z": 51.66
+    }
+   ],
+   "match": {
+    "uid": "S202212",
+    "kname": "서대전역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "대전광역시 중구 오류동 74",
+    "centre": [
+     127.40315,
+     36.32246,
+     51.66
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 79.73
+     },
+     {
+      "raw": "4F",
+      "floor": "4F",
+      "ord": 2,
+      "z": 67.78
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 3,
+      "z": 63.55
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 4,
+      "z": 63.55
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 5,
+      "z": 54.51
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 6266,
+    "sha256": "94745acc6ac78847009778f21f43cb9082fe89f2b6ada730726a4e0d4874fd42",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "서원주역",
+   "query": "서원주역",
+   "status": 200,
+   "response_sha256": "ef029830aa04d4299fb4607feb7bb4a62d9a3ccba4ad57b22cfd1dd8ccd0b6b4",
+   "candidates": [
+    {
+     "uid": "S202105",
+     "kname": "서원주역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "강원특별자치도 원주시 지정면 간현리 1132",
+     "x": 127.83969,
+     "y": 37.3483,
+     "z": 77.7
+    }
+   ],
+   "match": {
+    "uid": "S202105",
+    "kname": "서원주역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "강원특별자치도 원주시 지정면 간현리 1132",
+    "centre": [
+     127.83969,
+     37.3483,
+     77.7
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 87.45
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 1,
+      "z": 81.19
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 2,
+      "z": 74.45
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 41098,
+    "sha256": "ea5739f41fd6bd07252afcfeb0d19351608c8af3b961832c9e7635fa77b3822b",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "수원역",
+   "query": "수원역",
+   "status": 200,
+   "response_sha256": "921f8cddedbe5d7b9b71716d7632f3f27291d774080362605c49f901e0e963b5",
+   "candidates": [
+    {
+     "uid": "S201901",
+     "kname": "수원역KTX",
+     "class": "교통시설 > 기차역 > 경부선",
+     "address": "경기도 수원시 팔달구 매산로1가 18 수원역",
+     "x": 126.99987,
+     "y": 37.26587,
+     "z": 32.4
+    }
+   ],
+   "match": {
+    "uid": "S201901",
+    "kname": "수원역KTX",
+    "class": "교통시설 > 기차역 > 경부선",
+    "address": "경기도 수원시 팔달구 매산로1가 18 수원역",
+    "centre": [
+     126.99987,
+     37.26587,
+     32.4
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 64.41
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 1,
+      "z": 48.86
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 2,
+      "z": 42.56
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 3,
+      "z": 35.31
+     },
+     {
+      "raw": "B1",
+      "floor": "B1",
+      "ord": 4,
+      "z": 26.7
+     },
+     {
+      "raw": "B2",
+      "floor": "B2",
+      "ord": 5,
+      "z": 19.3
+     },
+     {
+      "raw": "B3",
+      "floor": "B3",
+      "ord": 6,
+      "z": 13.3
+     },
+     {
+      "raw": "B4",
+      "floor": "B4",
+      "ord": 7,
+      "z": 8.23
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 70742,
+    "sha256": "88af5056daa1eabe7e9e222afba668922fc220ec7a7588b2940097bddfabd1cd",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "순천역",
+   "query": "순천역",
+   "status": 200,
+   "response_sha256": "3b76e81786b6607a099f5745a0becde8199ba9a957c53f3bd1b66b704bab02dc",
+   "candidates": [
+    {
+     "uid": "S202109",
+     "kname": "순천역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "전라남도 순천시 덕암동 139-1",
+     "x": 127.50503,
+     "y": 34.9452,
+     "z": 7.5
+    }
+   ],
+   "match": {
+    "uid": "S202109",
+    "kname": "순천역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "전라남도 순천시 덕암동 139-1",
+    "centre": [
+     127.50503,
+     34.9452,
+     7.5
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 24.4
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 1,
+      "z": 18.17
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 2,
+      "z": 14.62
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 3,
+      "z": 10.17
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 48127,
+    "sha256": "57d2dc36c92ac30c12b216503efb76ce733ec7b4871d7327b2533246092c7e5c",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "신경주역",
+   "query": "신경주역",
+   "status": 200,
+   "response_sha256": "ce23d9097dc1bb8c5290b36f9c41615a9c2f5195b185683df8093207ab531d4c",
+   "candidates": [
+    {
+     "uid": "S202108",
+     "kname": "신경주역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "경상북도 경주시 건천읍 화천리 1010",
+     "x": 129.13894,
+     "y": 35.79829,
+     "z": 90.9
+    }
+   ],
+   "match": {
+    "uid": "S202108",
+    "kname": "신경주역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "경상북도 경주시 건천읍 화천리 1010",
+    "centre": [
+     129.13894,
+     35.79829,
+     90.9
+    ],
+    "floors": [
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 1,
+      "z": 106
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 2,
+      "z": 94.43
+     },
+     {
+      "raw": "B1",
+      "floor": "B1",
+      "ord": 3,
+      "z": 88.46
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 56721,
+    "sha256": "1745c60e35201a7b9c4ef2c4584c7b52a2cb9d310cb0ce361d1deb6a3a128922",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "안동역",
+   "query": "안동역",
+   "status": 200,
+   "response_sha256": "27bd8f70fa028ea9825435702b9b02245b93cd320d35a2097711a9aef66ac500",
+   "candidates": [
+    {
+     "uid": "S202209",
+     "kname": "안동역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "경상북도 안동시 송현동 648",
+     "x": 128.67485,
+     "y": 36.57444,
+     "z": 86.95
+    }
+   ],
+   "match": {
+    "uid": "S202209",
+    "kname": "안동역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "경상북도 안동시 송현동 648",
+    "centre": [
+     128.67485,
+     36.57444,
+     86.95
+    ],
+    "floors": [
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 1,
+      "z": 111.5
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 2,
+      "z": 104.06
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 3,
+      "z": 91.71
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 3104,
+    "sha256": "cb403cd0370f15db79390cd0f0f8e752c458db011546c427acc38ba60c126ef7",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "여수엑스포역",
+   "query": "여수엑스포역",
+   "status": 200,
+   "response_sha256": "123c5519815b2eebb0c62037ed1f7d77304d7377f083cc4880014920c7eecc03",
+   "candidates": [
+    {
+     "uid": "S202202",
+     "kname": "여수엑스포역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "전라남도 여수시 덕충동 61-7",
+     "x": 127.74897,
+     "y": 34.75434,
+     "z": 6.2
+    }
+   ],
+   "match": {
+    "uid": "S202202",
+    "kname": "여수엑스포역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "전라남도 여수시 덕충동 61-7",
+    "centre": [
+     127.74897,
+     34.75434,
+     6.2
+    ],
+    "floors": [
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 1,
+      "z": 15
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 2,
+      "z": 11
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 3,
+      "z": 7
+     },
+     {
+      "raw": "B1",
+      "floor": "B1",
+      "ord": 4,
+      "z": 2
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 6059,
+    "sha256": "5f6989f09cb42caca3d39e77d79e9c2e6641efd605eb13b1fe3b50c61d4ad293",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "여천역",
+   "query": "여천역",
+   "status": 200,
+   "response_sha256": "07796cd45d6358cada3ec2c8c0966e600a84286712fc5733012cbb4828302e2c",
+   "candidates": [
+    {
+     "uid": "S202313",
+     "kname": "여천역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "전라남도 여수시 여천동 903-19",
+     "x": 127.6646588,
+     "y": 34.7793921,
+     "z": 34.21
+    }
+   ],
+   "match": {
+    "uid": "S202313",
+    "kname": "여천역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "전라남도 여수시 여천동 903-19",
+    "centre": [
+     127.6646588,
+     34.7793921,
+     34.21
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 39.64
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 2,
+      "z": 36.13
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 3,
+      "z": 30.19
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 2197,
+    "sha256": "ea2167ec8fae104811985ad90f93bf9c784ea27835984338d30a6c5b7dfa45ef",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "오송역",
+   "query": "오송역",
+   "status": 200,
+   "response_sha256": "0917945ce32cd22743864fd3398fc20ba2fe5e61b58d5554687cfb9ffac16527",
+   "candidates": [
+    {
+     "uid": "S201802",
+     "kname": "오송역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "충청북도 청주시 흥덕구 오송가락로 123",
+     "x": 127.32757,
+     "y": 36.62009,
+     "z": 30.1
+    }
+   ],
+   "match": {
+    "uid": "S201802",
+    "kname": "오송역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "충청북도 청주시 흥덕구 오송가락로 123",
+    "centre": [
+     127.32757,
+     36.62009,
+     30.1
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 47.81
+     },
+     {
+      "raw": "4F",
+      "floor": "4F",
+      "ord": 1,
+      "z": 49.22
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 2,
+      "z": 41.37
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 3,
+      "z": 36.36
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 4,
+      "z": 31.23
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 107230,
+    "sha256": "c0b3c1a484f4103ec599a4c898fde27ea36f9b5531c204a34a790ed3ab99e62a",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "용산역",
+   "query": "용산역",
+   "status": 200,
+   "response_sha256": "cc1f792a83eb01be329f8b2a6696eb4d7172a77d11b148c3bbd7a0a658d5f1ef",
+   "candidates": [
+    {
+     "uid": "S201903",
+     "kname": "용산역KTX",
+     "class": "교통시설 > 철도/지하철 > 1호/경의/중앙/고속철도",
+     "address": "서울특별시 용산구 한강로3가 40-999",
+     "x": 126.96473,
+     "y": 37.52984,
+     "z": 12.7
+    }
+   ],
+   "match": {
+    "uid": "S201903",
+    "kname": "용산역KTX",
+    "class": "교통시설 > 철도/지하철 > 1호/경의/중앙/고속철도",
+    "address": "서울특별시 용산구 한강로3가 40-999",
+    "centre": [
+     126.96473,
+     37.52984,
+     12.7
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 68.93
+     },
+     {
+      "raw": "5F",
+      "floor": "5F",
+      "ord": 1,
+      "z": 35.68
+     },
+     {
+      "raw": "4F",
+      "floor": "4F",
+      "ord": 2,
+      "z": 31.79
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 3,
+      "z": 24.9
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 4,
+      "z": 24.91
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 5,
+      "z": 15.66
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 18087,
+    "sha256": "cf3d90debdff0ee82bd3d5717ce1a717239c5b2db3dd8fc2ecd6e277e0a45e2d",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "울산역",
+   "query": "울산역",
+   "status": 200,
+   "response_sha256": "6b555db8b44e1e353109b0679150b180bec97dcac70d997be36b9f59cf4caa41",
+   "candidates": [
+    {
+     "uid": "S202106",
+     "kname": "울산역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "울산광역시 울주군 삼남읍 신화리 88",
+     "x": 129.1384406,
+     "y": 35.5515512,
+     "z": 78
+    }
+   ],
+   "match": {
+    "uid": "S202106",
+    "kname": "울산역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "울산광역시 울주군 삼남읍 신화리 88",
+    "centre": [
+     129.1384406,
+     35.5515512,
+     78
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 99.39
+     },
+     {
+      "raw": "4F",
+      "floor": "4F",
+      "ord": 1,
+      "z": 91.26
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 2,
+      "z": 88.81
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 3,
+      "z": 83.19
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 4,
+      "z": 77.79
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 68943,
+    "sha256": "d36bd05d6d02f3f1dd0462ddcdf4537981defd6d95823414534e6af1e780f4bd",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "원주역",
+   "query": "원주역",
+   "status": 200,
+   "response_sha256": "d54132dc8533620af6966923926b48f13de43364ea6494bb72c1a7cf6ff11af5",
+   "candidates": [
+    {
+     "uid": "S202105",
+     "kname": "서원주역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "강원특별자치도 원주시 지정면 간현리 1132",
+     "x": 127.83969,
+     "y": 37.3483,
+     "z": 77.7
+    },
+    {
+     "uid": "S202104",
+     "kname": "원주역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "강원특별자치도 원주시 무실동 774-1",
+     "x": 127.92265,
+     "y": 37.31635,
+     "z": 140.4
+    }
+   ],
+   "match": {
+    "uid": "S202104",
+    "kname": "원주역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "강원특별자치도 원주시 무실동 774-1",
+    "centre": [
+     127.92265,
+     37.31635,
+     140.4
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 149.81
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 1,
+      "z": 147.43
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 2,
+      "z": 140.1
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 53525,
+    "sha256": "d688cd43586c22f624fe252c95f928234aed60406166fbbc6c5b7f8e02ebe229",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "익산역",
+   "query": "익산역",
+   "status": 200,
+   "response_sha256": "a12c378db81eedb1d89a213accdce99bd67c6078a48588c23a7cfe97581ba08f",
+   "candidates": [
+    {
+     "uid": "S201803",
+     "kname": "익산역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "전북특별자치도 익산시 익산대로 153",
+     "x": 126.94572,
+     "y": 35.94067,
+     "z": 12.5
+    }
+   ],
+   "match": {
+    "uid": "S201803",
+    "kname": "익산역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "전북특별자치도 익산시 익산대로 153",
+    "centre": [
+     126.94572,
+     35.94067,
+     12.5
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 31
+     },
+     {
+      "raw": "4F",
+      "floor": "4F",
+      "ord": 1,
+      "z": 28.39
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 2,
+      "z": 22.95
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 3,
+      "z": 18.28
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 4,
+      "z": 15.29
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 75253,
+    "sha256": "21da175c81b1d9a1710d55a01ebca4d05ccc2804b6289b4ab2ef7b0efa6d325f",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "정읍역",
+   "query": "정읍역",
+   "status": 200,
+   "response_sha256": "fe4c5a45afb9134f899e467f2b0aaf7b2b08483e3ed20129fb7c12d4b69cbdf2",
+   "candidates": [
+    {
+     "uid": "S202210",
+     "kname": "정읍역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "전북특별자치도 정읍시 연지동 343-380",
+     "x": 126.84192,
+     "y": 35.57542,
+     "z": 30.25
+    }
+   ],
+   "match": {
+    "uid": "S202210",
+    "kname": "정읍역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "전북특별자치도 정읍시 연지동 343-380",
+    "centre": [
+     126.84192,
+     35.57542,
+     30.25
+    ],
+    "floors": [
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 1,
+      "z": 56.1
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 2,
+      "z": 44.23
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 3,
+      "z": 34.21
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 2876,
+    "sha256": "44f12d00a42cf77f27d01ff12c481d1ded1c56bc5e6d3d8b22522a00f3389bd9",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "제천역",
+   "query": "제천역",
+   "status": 200,
+   "response_sha256": "f2cea965acb232274c6150b1589c314cff4bcda8c14119502a52865b2bcff59e",
+   "candidates": [
+    {
+     "uid": "S202102",
+     "kname": "제천역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "충청북도 제천시 영천동 1381-1",
+     "x": 128.20677,
+     "y": 37.12712,
+     "z": 240
+    }
+   ],
+   "match": {
+    "uid": "S202102",
+    "kname": "제천역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "충청북도 제천시 영천동 1381-1",
+    "centre": [
+     128.20677,
+     37.12712,
+     240
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 258.94
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 1,
+      "z": 251.15
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 2,
+      "z": 247.45
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 3,
+      "z": 241.96
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 46453,
+    "sha256": "1f83fe83fa826320fef36bc309b8c62c47a72b016a1cc34c1fd21dc44b29c9a8",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "진부역",
+   "query": "진부역",
+   "status": 200,
+   "response_sha256": "b3c95b75e4f9e229ef8cea5c10ee4f20dafcedfbe1d2580075be35a4245f26b0",
+   "candidates": [
+    {
+     "uid": "S201703",
+     "kname": "진부역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "강원특별자치도 평창군 진부면 송정길 120",
+     "x": 128.57450128724815,
+     "y": 37.64271321507183,
+     "z": 560
+    }
+   ],
+   "match": {
+    "uid": "S201703",
+    "kname": "진부역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "강원특별자치도 평창군 진부면 송정길 120",
+    "centre": [
+     128.57450128724815,
+     37.64271321507183,
+     560
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 578.67
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 1,
+      "z": 571.97
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 2,
+      "z": 563.94
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 19743,
+    "sha256": "7d545f0060bbcd47513a6f5cc4c4d37a5f50ff0b342888c0411a559a520a9090",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "진영역",
+   "query": "진영역",
+   "status": 200,
+   "response_sha256": "63dff7cb3150cc42147e0f998c0353c33e78602c7e1451a84c552cb9e607fcd6",
+   "candidates": [
+    {
+     "uid": "S202308",
+     "kname": "진영역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "경상남도 김해시 진영읍 설창리 131-1",
+     "x": 128.7739645,
+     "y": 35.2993524,
+     "z": 21.31
+    }
+   ],
+   "match": {
+    "uid": "S202308",
+    "kname": "진영역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "경상남도 김해시 진영읍 설창리 131-1",
+    "centre": [
+     128.7739645,
+     35.2993524,
+     21.31
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 34.52
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 2,
+      "z": 22.36
+     },
+     {
+      "raw": "B1",
+      "floor": "B1",
+      "ord": 3,
+      "z": 14.81
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 4464,
+    "sha256": "2ab4576783e4a6db3c6f9adbadbeb3801823445976a0496adb6cba99bf3b439d",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "진주역",
+   "query": "진주역",
+   "status": 200,
+   "response_sha256": "f5a6fd88de232784f0880bb0c8e899588f58b3040f0332c37505c79af08a69a3",
+   "candidates": [
+    {
+     "uid": "S202307",
+     "kname": "진주역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "경상남도 진주시 가좌동 68-10",
+     "x": 128.1180043,
+     "y": 35.1501791,
+     "z": 38.96
+    }
+   ],
+   "match": {
+    "uid": "S202307",
+    "kname": "진주역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "경상남도 진주시 가좌동 68-10",
+    "centre": [
+     128.1180043,
+     35.1501791,
+     38.96
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 46.87
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 2,
+      "z": 40.87
+     },
+     {
+      "raw": "B1",
+      "floor": "B1",
+      "ord": 3,
+      "z": 34.59
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 1951,
+    "sha256": "b093dbec50f9b157bc726f0f0b5b6a3ede3fe70614389e73cdd595f9ad4a6270",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "창원역",
+   "query": "창원역",
+   "status": 200,
+   "response_sha256": "9348e5aeb336f37a66b8e43d955c2c23ce5b079510c43ae28ac48c8281ca2a69",
+   "candidates": [
+    {
+     "uid": "S202306",
+     "kname": "창원역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "경상남도 창원시 의창구 동정동 708-76",
+     "x": 128.6070942,
+     "y": 35.25823,
+     "z": 46.6
+    }
+   ],
+   "match": {
+    "uid": "S202306",
+    "kname": "창원역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "경상남도 창원시 의창구 동정동 708-76",
+    "centre": [
+     128.6070942,
+     35.25823,
+     46.6
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 64.53
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 2,
+      "z": 57.18
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 3,
+      "z": 48.59
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 3301,
+    "sha256": "c291b1db2d0397e3d069fd3ef66e1294907bbcdec0ecb631a21f627b41b81fa3",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "창원중앙역",
+   "query": "창원중앙역",
+   "status": 200,
+   "response_sha256": "a23729695b0ed5f72a664ce6bbc031738667416a8a1c058108fc853d4f8f3fb5",
+   "candidates": [
+    {
+     "uid": "S202305",
+     "kname": "창원중앙역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "경상남도 창원시 의창구 용동 산32-8",
+     "x": 128.7013638,
+     "y": 35.2428848,
+     "z": 84.83
+    }
+   ],
+   "match": {
+    "uid": "S202305",
+    "kname": "창원중앙역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "경상남도 창원시 의창구 용동 산32-8",
+    "centre": [
+     128.7013638,
+     35.2428848,
+     84.83
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 94.14
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 2,
+      "z": 91.58
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 3,
+      "z": 84.94
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 2607,
+    "sha256": "b398cfc3ed2a887f950568dda30887e466b626a81c58de6a97ce878e5d748809",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "천안아산역",
+   "query": "천안아산역",
+   "status": 200,
+   "response_sha256": "fa335703e75d6c8e58141beec89201706e2525a174c9fa0b7cd175e26bac9dd3",
+   "candidates": [
+    {
+     "uid": "S202002",
+     "kname": "천안아산역",
+     "class": "교통시설 > 철도/지하철 > 고속철도",
+     "address": "충청남도 아산시 배방읍 장재리 364-4",
+     "x": 127.10456,
+     "y": 36.79446,
+     "z": 24.8
+    }
+   ],
+   "match": {
+    "uid": "S202002",
+    "kname": "천안아산역",
+    "class": "교통시설 > 철도/지하철 > 고속철도",
+    "address": "충청남도 아산시 배방읍 장재리 364-4",
+    "centre": [
+     127.10456,
+     36.79446,
+     24.8
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 54.39
+     },
+     {
+      "raw": "4F",
+      "floor": "4F",
+      "ord": 1,
+      "z": 43.33
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 2,
+      "z": 35.66
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 3,
+      "z": 31.35
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 4,
+      "z": 26.26
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 69360,
+    "sha256": "b1612f0efc02238cc269c1344e64664734adadfffd9e9ebad3737b2c8e9c3a1c",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "청량리역",
+   "query": "청량리역",
+   "status": 200,
+   "response_sha256": "bda8521a2e4a688c05946e05c455e8afc395fd118a829d4f28378643eed39963",
+   "candidates": [
+    {
+     "uid": "S201904",
+     "kname": "청량리역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "서울특별시 동대문구 전농동 588-1",
+     "x": 127.04818,
+     "y": 37.58033,
+     "z": 26.6
+    }
+   ],
+   "match": {
+    "uid": "S201904",
+    "kname": "청량리역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "서울특별시 동대문구 전농동 588-1",
+    "centre": [
+     127.04818,
+     37.58033,
+     26.6
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 49.31
+     },
+     {
+      "raw": "6F",
+      "floor": "6F",
+      "ord": 1,
+      "z": 41.88
+     },
+     {
+      "raw": "5F",
+      "floor": "5F",
+      "ord": 2,
+      "z": 36.92
+     },
+     {
+      "raw": "4F",
+      "floor": "4F",
+      "ord": 3,
+      "z": 33.05
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 4,
+      "z": 30.93
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 5,
+      "z": 28.9
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 6,
+      "z": 21.04
+     },
+     {
+      "raw": "B1",
+      "floor": "B1",
+      "ord": 7,
+      "z": 15.15
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 37889,
+    "sha256": "b1fcdce7130497096913c9783eea499ff511d378d4a071311682721a0c376f13",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "평창역",
+   "query": "평창역",
+   "status": 200,
+   "response_sha256": "ed0ace3961f4e20a24ab76ac454c4505da721f868cf943aba142a5007135be9c",
+   "candidates": [
+    {
+     "uid": "S201702",
+     "kname": "평창역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "강원특별자치도 평창군 용평면 평창대로 1715",
+     "x": 128.42986,
+     "y": 37.56215,
+     "z": 558
+    }
+   ],
+   "match": {
+    "uid": "S201702",
+    "kname": "평창역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "강원특별자치도 평창군 용평면 평창대로 1715",
+    "centre": [
+     128.42986,
+     37.56215,
+     558
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 0,
+      "z": 580.68
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 1,
+      "z": 570.3
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 2,
+      "z": 561.89
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 12470,
+    "sha256": "dba1d241b2e38ef44ab43d9b28d4ee149b3abf0476c96ae13c3e226d83915f6f",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "평택역",
+   "query": "평택역",
+   "status": 200,
+   "response_sha256": "bb8ed5ac46cf4023cbcfeec0dbe477c32c3d59183fbe99a3bb7048a2f29e091a",
+   "candidates": [
+    {
+     "uid": "S202304",
+     "kname": "평택역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "경기도 평택시 평택동 185-568",
+     "x": 127.086,
+     "y": 36.99009,
+     "z": 8.92
+    }
+   ],
+   "match": {
+    "uid": "S202304",
+    "kname": "평택역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "경기도 평택시 평택동 185-568",
+    "centre": [
+     127.086,
+     36.99009,
+     8.92
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 60.87
+     },
+     {
+      "raw": "4F",
+      "floor": "4F",
+      "ord": 2,
+      "z": 32.1
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 3,
+      "z": 19.52
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 4,
+      "z": 10.68
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 4011,
+    "sha256": "ec084c5472114dbea1215184afdb417569ae1b79e6583bf987cb23d30ecbd6c8",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "포항역",
+   "query": "포항역",
+   "status": 200,
+   "response_sha256": "60d6827ab353fc2f0cfc3778f1fa21741788cf65e7a0c9d6eec00fa9a428fd56",
+   "candidates": [
+    {
+     "uid": "S202208",
+     "kname": "포항역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "경상북도 포항시 북구 흥해읍 이인리 8",
+     "x": 129.34222,
+     "y": 36.07104,
+     "z": 39.23
+    }
+   ],
+   "match": {
+    "uid": "S202208",
+    "kname": "포항역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "경상북도 포항시 북구 흥해읍 이인리 8",
+    "centre": [
+     129.34222,
+     36.07104,
+     39.23
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 58.1
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 2,
+      "z": 44.64
+     },
+     {
+      "raw": "2F",
+      "floor": "2F",
+      "ord": 3,
+      "z": 44.64
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 4,
+      "z": 41.6
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 4695,
+    "sha256": "d5189628869a95804c11a6361fee168847624ddd84bc2b67a2cf45263b15391e",
+    "centre_inside": true
+   },
+   "result": "verified"
+  },
+  {
+   "name": "행신역",
+   "query": "행신역",
+   "status": 200,
+   "response_sha256": "9257ab8b5e39f42803cb8d1c5c528d489e4f29f182bf7ad10b56611a5a48024e",
+   "candidates": [
+    {
+     "uid": "S202216",
+     "kname": "행신역KTX",
+     "class": "교통시설 > 기차역 > 고속철도",
+     "address": "경기도 고양시 행신동 812",
+     "x": 126.83431,
+     "y": 37.61206,
+     "z": 11.7
+    }
+   ],
+   "match": {
+    "uid": "S202216",
+    "kname": "행신역KTX",
+    "class": "교통시설 > 기차역 > 고속철도",
+    "address": "경기도 고양시 행신동 812",
+    "centre": [
+     126.83431,
+     37.61206,
+     11.7
+    ],
+    "floors": [
+     {
+      "raw": "RF",
+      "floor": "RF",
+      "ord": 1,
+      "z": 31.91
+     },
+     {
+      "raw": "3F",
+      "floor": "3F",
+      "ord": 2,
+      "z": 22.28
+     },
+     {
+      "raw": "1F",
+      "floor": "1F",
+      "ord": 3,
+      "z": 15.65
+     }
+    ]
+   },
+   "tileset": {
+    "status": 200,
+    "bytes": 3578,
+    "sha256": "a98d48f4d73d558fbf3d3d08243d2e02a911bcb36e541cfd861e755de1057a0d",
+    "centre_inside": true
+   },
+   "result": "verified"
+  }
+ ]
+}

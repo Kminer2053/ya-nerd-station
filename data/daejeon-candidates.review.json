@@ -1,0 +1,690 @@
+{
+ "site_id": "S201801",
+ "source": "VWorld 대전역KTX 실내 3D 타일(2026-09-02 수집)의 객체 텍스처 슬롯 1,379개 · outputs/20260902_vworld_daejeon_image_catalog/object-texture-slots.json",
+ "reviewed_at": "2026-09-27",
+ "method": "큰 벽면 텍스처 225개, 시설 객체 100개, 글자가 있어 보이는 작은 텍스처 120개를 눈으로 확인해 매장·안내시설로 보이는 것만 골랐다. 이름은 텍스처 사진 속 간판에서 읽은 것이며 현장 확인 전이다. 읽을 수 없는 간판은 이름을 붙이지 않았다. 승강장 바닥 호차 표지처럼 칸마다 반복되는 표지는 목록에서 뺐다.",
+ "stores": [
+  {
+   "id": "DJ-S-DAMDA",
+   "name": "담다 (DAMDA COFFEE)",
+   "category": "카페",
+   "slots": [
+    "F01_WL06-S04"
+   ],
+   "basis": "간판 '담다', 출입문 로고 'DAMDA COFFEE'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-S-JEONGDONG",
+   "name": null,
+   "sign_text": "정동 뚝… (간판 일부만 보임)",
+   "category": "음식점",
+   "slots": [
+    "F01_WL06-S18"
+   ],
+   "basis": "세로 간판 일부와 메뉴 사진",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-GARAK",
+   "name": "대전역 가락국수",
+   "category": "음식점",
+   "slots": [
+    "F01_WL06-S20"
+   ],
+   "basis": "간판 '대전역 가락국수'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-S-CURRYPOT",
+   "name": "커리포트 대전역점 (CURRY POT)",
+   "category": "음식점",
+   "slots": [
+    "F01_WL06-S24",
+    "F01_WL06-S22"
+   ],
+   "basis": "간판 'CURRY POT (대전역점)', 안내문 '저희 커리포트 대전역점은…'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-S-1F-S25",
+   "name": null,
+   "category": "음식점",
+   "slots": [
+    "F01_WL06-S25"
+   ],
+   "basis": "좌석과 손님이 보이는 매장 내부, 간판 없음",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-STORYWAY-1F",
+   "name": "스토리웨이 (StoryWay) 1층",
+   "category": "편의점",
+   "slots": [
+    "F01_WL06-S30",
+    "F01_WL06-S31",
+    "F01_WL06-S32"
+   ],
+   "basis": "간판 'StoryWay'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-S-LOTTERIA",
+   "name": "롯데리아 (LOTTERIA)",
+   "category": "패스트푸드",
+   "slots": [
+    "F01_WL06-S33"
+   ],
+   "basis": "간판 일부 '…OTTERIA'",
+   "certainty": "medium"
+  },
+  {
+   "id": "DJ-S-1F-S17",
+   "name": null,
+   "category": "매장",
+   "slots": [
+    "F01_WL06-S17"
+   ],
+   "basis": "상품 진열창, 간판 없음",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-1F-S36",
+   "name": null,
+   "category": "매장",
+   "slots": [
+    "F01_WL06-S36"
+   ],
+   "basis": "상품 진열 매장 전면, 간판 판독 불가",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-1F-CAFE",
+   "name": null,
+   "category": "카페·음식점",
+   "slots": [
+    "F01_WL02-S23"
+   ],
+   "basis": "유리 너머 좌석과 손님, 간판 없음",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-SUNGSIMDANG",
+   "name": "성심당",
+   "category": "베이커리",
+   "slots": [
+    "F02_WL01-S31",
+    "F02_WL01-S28",
+    "F02_WL01-S33"
+   ],
+   "basis": "간판 한자 '…心堂'과 '1956 以來 · 大田名物', 다른 면 간판 'SUNG S…', 빵 포스터 'TOP12'",
+   "certainty": "medium"
+  },
+  {
+   "id": "DJ-S-STORYWAY-3F",
+   "name": "스토리웨이 편의점 (StoryWay) 3층",
+   "category": "편의점",
+   "slots": [
+    "F03_WL05-S04",
+    "F03_WL05-S02",
+    "F03_WL05-S50"
+   ],
+   "basis": "간판 'StoryWay CVS', '편의점'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-S-PETITBOX",
+   "name": "Petit Box",
+   "category": "간편식",
+   "slots": [
+    "F03_WL05-S06"
+   ],
+   "basis": "간판 'Petit Box'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-S-GUJEUK",
+   "name": "구즉여울묵",
+   "category": "음식점",
+   "slots": [
+    "F03_WL05-S17"
+   ],
+   "basis": "간판 '구즉여울묵'",
+   "certainty": "medium"
+  },
+  {
+   "id": "DJ-S-BUSANEOMUK",
+   "name": "부산어묵",
+   "sign_text": "부산어묵·꼬?김밥 (뒷부분 판독 불확실)",
+   "category": "음식점",
+   "slots": [
+    "F03_WL05-S18"
+   ],
+   "basis": "간판 '부산어묵·…김밥'",
+   "certainty": "medium"
+  },
+  {
+   "id": "DJ-S-3F-S20",
+   "name": null,
+   "category": "매장",
+   "slots": [
+    "F03_WL05-S20"
+   ],
+   "basis": "매장 전면, 간판 판독 불가",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-GORAESA",
+   "name": "고래사어묵",
+   "category": "어묵",
+   "slots": [
+    "F03_WL05-S24"
+   ],
+   "basis": "간판 '…·고래사어묵' (앞부분 판독 불가)",
+   "certainty": "medium"
+  },
+  {
+   "id": "DJ-S-3F-S25",
+   "name": null,
+   "category": "매장",
+   "slots": [
+    "F03_WL05-S25"
+   ],
+   "basis": "매장 내부, 간판 없음",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-CHALBORI",
+   "name": "찰보리빵·호두과자",
+   "category": "간식·제과",
+   "slots": [
+    "F03_WL05-S26"
+   ],
+   "basis": "간판 '찰보리빵·호두과자'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-S-LOHBS",
+   "name": "롭스 (LOHB's)",
+   "category": "화장품·생활",
+   "slots": [
+    "F03_WL05-S28",
+    "F03_WL05-S36",
+    "F03_WL05-S40"
+   ],
+   "basis": "간판 'LOHB's', 'Grand OPEN' 현수막",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-S-3F-S41",
+   "name": null,
+   "category": "매장",
+   "slots": [
+    "F03_WL05-S41"
+   ],
+   "basis": "손님이 있는 매장 전면, 간판 없음",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-HOTDOG",
+   "name": "HOTDOG & COFFEE",
+   "category": "간식·카페",
+   "slots": [
+    "F03_WL05-S42",
+    "F03_WL05-S37"
+   ],
+   "basis": "간판 'HOTDOG & COFFEE'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-S-PHONEDA",
+   "name": "폰다 (PHONE DA)",
+   "category": "휴대폰 액세서리",
+   "slots": [
+    "F03_WL05-S44"
+   ],
+   "basis": "간판 '폰다 폰악세사리', '배터리/충전기/이어폰/케이블/케이스'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-S-3F-S47",
+   "name": null,
+   "category": "매장",
+   "slots": [
+    "F03_WL05-S47"
+   ],
+   "basis": "진열대 매장 전면, 간판 없음",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-3F-S49",
+   "name": null,
+   "category": "매장",
+   "slots": [
+    "F03_WL05-S49"
+   ],
+   "basis": "매장 전면, 간판 없음",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-3F-S51",
+   "name": null,
+   "category": "매장",
+   "slots": [
+    "F03_WL05-S51"
+   ],
+   "basis": "매장 전면, 간판 없음",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-3F-GIFT",
+   "name": null,
+   "category": "매장",
+   "slots": [
+    "F03sl_FC-S02"
+   ],
+   "basis": "붉은 선물 상자 진열 매장, 간판 글자 판독 불가",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-4F-S21",
+   "name": null,
+   "category": "음식점",
+   "slots": [
+    "F04_WL-S21"
+   ],
+   "basis": "식당가 매장 전면, 간판 판독 불가",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-HARUENSOKU",
+   "name": "하루엔소쿠",
+   "category": "음식점",
+   "slots": [
+    "F04_WL-S23"
+   ],
+   "basis": "간판 '하루엔소쿠'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-S-4F-S34",
+   "name": null,
+   "category": "음식점",
+   "slots": [
+    "F04_WL-S34"
+   ],
+   "basis": "식당가 매장 전면, 간판 없음",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-4F-S35",
+   "name": null,
+   "category": "음식점",
+   "slots": [
+    "F04_WL-S35"
+   ],
+   "basis": "식당가 매장 전면, 간판 없음",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-DUNKIN",
+   "name": "던킨 (DUNKIN' DONUTS)",
+   "category": "도넛·커피",
+   "slots": [
+    "F04_WL-S37"
+   ],
+   "basis": "간판 'DUNKIN' DONUTS'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-S-4F-S42",
+   "name": null,
+   "category": "매장",
+   "slots": [
+    "F04_WL-S42"
+   ],
+   "basis": "상품 진열 매장 전면, 간판 없음",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-4F-S49",
+   "name": null,
+   "category": "음식점",
+   "slots": [
+    "F04_WL-S49"
+   ],
+   "basis": "식당가 매장 전면, 간판 없음",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-4F-S53",
+   "name": null,
+   "category": "음식점",
+   "slots": [
+    "F04_WL-S53"
+   ],
+   "basis": "식당가 매장 전면, 간판 없음",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-4F-S54",
+   "name": null,
+   "category": "음식점",
+   "slots": [
+    "F04_WL-S54"
+   ],
+   "basis": "식당가 매장 전면, 간판 없음",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-4F-S55",
+   "name": null,
+   "category": "음식점",
+   "slots": [
+    "F04_WL-S55"
+   ],
+   "basis": "식당가 매장 전면, 간판 없음",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-4F-S61",
+   "name": null,
+   "category": "음식점",
+   "slots": [
+    "F04_WL-S61"
+   ],
+   "basis": "식당가 매장 전면, 간판 없음",
+   "certainty": "low"
+  },
+  {
+   "id": "DJ-S-COFFEEBAY",
+   "name": "커피베이 (COFFEEBAY)",
+   "category": "카페",
+   "slots": [
+    "F04_WL-S68"
+   ],
+   "basis": "간판 'COFFEEBAY'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-S-ANDONG",
+   "name": "안동국밥",
+   "category": "음식점",
+   "slots": [
+    "F04_WL-S76"
+   ],
+   "basis": "간판 '안동국밥'",
+   "certainty": "medium"
+  }
+ ],
+ "facilities": [
+  {
+   "id": "DJ-F-WAITING",
+   "name": "고객대기실",
+   "category": "대기실",
+   "slots": [
+    "F01_WL03-S23"
+   ],
+   "basis": "안내판 '고객대기실 Waiting Room'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-F-LOUNGE",
+   "name": "코레일멤버십라운지",
+   "category": "라운지",
+   "slots": [
+    "F02_WL01-S64",
+    "F02_WL01-S25",
+    "F02_WL01-S63"
+   ],
+   "basis": "간판 '코레일멤버십라…', 출입문",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-F-COUNTER",
+   "name": "매표·안내 창구",
+   "category": "매표·안내",
+   "slots": [
+    "F03if_FC01-S15"
+   ],
+   "basis": "KORAIL 창구와 직원, '마음을 잇다' 문구",
+   "certainty": "medium"
+  },
+  {
+   "id": "DJ-F-TICKETMACHINE",
+   "name": "승차권 자동발매기 안내",
+   "category": "매표·안내",
+   "slots": [
+    "F03if_FC07-S08"
+   ],
+   "basis": "표지 '표사는 곳(승차권자동발매기)'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-F-INFOBOARD-2F",
+   "name": "안내 게시판",
+   "category": "안내판",
+   "slots": [
+    "F02fr_FC-S10"
+   ],
+   "basis": "게시판 '안내판 Information'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-F-INFOBOARD-3F",
+   "name": "알림판",
+   "category": "안내판",
+   "slots": [
+    "F03if_FC03-S12"
+   ],
+   "basis": "게시판 '알림판 Information'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-F-BRAILLE-1F",
+   "name": "점자 안내판",
+   "category": "안내판",
+   "slots": [
+    "F01_FC-S03"
+   ],
+   "basis": "안내판 '대전역 점자안내판'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-F-BRAILLE-3F",
+   "name": "점자 안내판",
+   "category": "안내판",
+   "slots": [
+    "F03if_FC06-S03"
+   ],
+   "basis": "안내판 '대전역 점자안내판'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-F-STATIONNAME",
+   "name": "역명판 (대전)",
+   "category": "안내판",
+   "slots": [
+    "F01ob_FC04-S01"
+   ],
+   "basis": "역명판 '대전 Daejeon 大田'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-F-TRACK-12",
+   "name": "승강장 안내판 (1·2번 타는 곳)",
+   "category": "승강장 안내",
+   "slots": [
+    "F01_FC02-S24"
+   ],
+   "basis": "안내판 '여기는 1·2번 타는 곳입니다'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-F-TRACK-34",
+   "name": "승강장 안내판 (3·4번 타는 곳)",
+   "category": "승강장 안내",
+   "slots": [
+    "F01ob_FC05-S17"
+   ],
+   "basis": "안내판 '여기는 3·4번 타는 곳입니다'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-F-TRACK-56",
+   "name": "승강장 안내판 (5·6번 타는 곳)",
+   "category": "승강장 안내",
+   "slots": [
+    "F01ob_FC04-S12"
+   ],
+   "basis": "안내판 '여기는 5·6번 타는 곳입니다'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-F-TRACK-78",
+   "name": "승강장 안내판 (7·8번 타는 곳)",
+   "category": "승강장 안내",
+   "slots": [
+    "F01_FC02-S17",
+    "F01ob_FC03-S22"
+   ],
+   "basis": "안내판 '여기는 7·8번 타는 곳입니다'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-F-TRACK-910",
+   "name": "승강장 안내판 (9·10번 타는 곳)",
+   "category": "승강장 안내",
+   "slots": [
+    "F01_FC02-S35"
+   ],
+   "basis": "안내판 '여기는 9·10번 타는 곳입니다'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-F-TRACK-1112",
+   "name": "승강장 안내판 (11·12번 타는 곳)",
+   "category": "승강장 안내",
+   "slots": [
+    "F01_FC02-S21"
+   ],
+   "basis": "안내판 '여기는 11·12번 타는 곳입니다'",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-F-ATM",
+   "name": "우리은행 ATM",
+   "category": "편의시설",
+   "slots": [
+    "F03cv_FC-S07"
+   ],
+   "basis": "'우리은행' ATM 부스",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-F-LOCKER",
+   "name": "물품보관함",
+   "category": "편의시설",
+   "slots": [
+    "F03cv_FC-S10"
+   ],
+   "basis": "보관함 칸이 보이는 텍스처",
+   "certainty": "medium"
+  },
+  {
+   "id": "DJ-F-VENDING-1F",
+   "name": "자판기",
+   "category": "편의시설",
+   "slots": [
+    "01Fco_FC-S12",
+    "01Fco_FC-S13",
+    "01Fco_FC-S14"
+   ],
+   "basis": "음료 자판기와 StoryWay 자판기",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-F-ELEVATOR-1F",
+   "name": "엘리베이터",
+   "category": "층간 이동",
+   "slots": [
+    "F01elv_FC-S01"
+   ],
+   "basis": "엘리베이터 문·내부 텍스처",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-F-ELEVATOR-3F",
+   "name": "엘리베이터",
+   "category": "층간 이동",
+   "slots": [
+    "F03_FC-S06"
+   ],
+   "basis": "엘리베이터 문·내부 텍스처",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-F-ELEVATOR-4F",
+   "name": "엘리베이터",
+   "category": "층간 이동",
+   "slots": [
+    "F04mv_FC-S03"
+   ],
+   "basis": "엘리베이터 문·내부 텍스처",
+   "certainty": "high"
+  },
+  {
+   "id": "DJ-F-STAIRS-3F",
+   "name": "계단",
+   "category": "층간 이동",
+   "slots": [
+    "F03st_FC-S02"
+   ],
+   "basis": "계단 디딤판 텍스처",
+   "certainty": "medium"
+  }
+ ],
+ "groups": [
+  {
+   "id": "DJ-F-ESCALATOR",
+   "name": "에스컬레이터",
+   "category": "층간 이동",
+   "models": [
+    "F03sc_FC",
+    "F03sc_FC01",
+    "F03sc_FC02",
+    "F03sc_FC03",
+    "F03sc_FC04",
+    "F03sc_FC05",
+    "F03sc_FC06",
+    "F03sc_FC07",
+    "F03sc_FC08",
+    "F03sc_FC09",
+    "F03sc_FC10",
+    "F03sc_FC11",
+    "F03sc_FC12"
+   ],
+   "radius_m": 5,
+   "basis": "손잡이·디딤판 텍스처. 모델 높이 56~58 m라 승강장↔대합실 연결로 보고, 나란한 두 대는 한 곳으로 묶음",
+   "certainty": "medium",
+   "by": "model"
+  },
+  {
+   "id": "DJ-F-SIGN",
+   "name": "방향 안내표지",
+   "category": "안내표지",
+   "models": [
+    "F03if_FC07",
+    "F04if_FC",
+    "F03if_FC02",
+    "F01ob_FC06"
+   ],
+   "exclude_slots": [
+    "F03if_FC07-S08"
+   ],
+   "radius_m": 15,
+   "basis": "'타는 곳·나가는 곳·표사는 곳·화장실·수유실·엘리베이터·식당가' 방향 표지",
+   "certainty": "high"
+  }
+ ]
+}

@@ -1,6 +1,41 @@
-<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#182d28"><title>야!너두 스테이션 편집기 · Ya! Nerd Station</title><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="stylesheet" href="https://cesium.com/downloads/cesiumjs/releases/1.142/Build/Cesium/Widgets/widgets.css"><script defer src="https://cesium.com/downloads/cesiumjs/releases/1.142/Build/Cesium/Cesium.js"></script></head><body>
-<header><a class="logo" href="/">야!너두 스테이션 <b>편집기 ↗</b><small>YA! NERD STATION / OPEN TOOLKIT</small></a><input id="projectName" aria-label="프로젝트 이름" value="나의 디지털트윈 스테이션"><div class="project-actions"><button id="newProject">새 프로젝트</button><button id="openProjects">불러오기</button><button id="saveProject" class="primary">서버 저장</button><button id="exportProject">JSON 내보내기</button><label class="button">가져오기<input id="importProject" type="file" accept="application/json,.json" hidden></label></div></header>
-<main><nav class="sections" aria-label="편집 작업"><button data-tab="assets" aria-pressed="true"><span>▧</span>구조물</button><button data-tab="facades"><span>▥</span>파사드</button><button data-tab="changes"><span>▦</span>현장변경</button><button data-tab="facilities"><span>◇</span>시설정보</button><button data-tab="origins"><span>◎</span>발생원점</button><button data-tab="points"><span>⊙</span>시설·포인트</button><button data-tab="connections"><span>⇅</span>층간연결</button><button data-tab="routes"><span>↝</span>이동동선</button><button data-tab="observations"><span>▤</span>연계 데이터</button><a href="https://github.com/Kminer2053/ya-nerd-station" target="_blank" rel="noopener">GitHub ↗</a><button id="help">사용 안내</button></nav>
-<aside id="workbench"><div class="panel-title"><span id="tabCaption">STRUCTURES</span><h1 id="tabTitle">구조물 추가·변경</h1><p id="tabHelp">기본 모델은 유지하고 변경 레이어를 별도로 관리합니다.</p></div><button id="addRecord">＋ 새 항목</button><input id="recordSearch" type="search" placeholder="이름·ID·층·역할 검색" aria-label="등록 항목 검색"><p id="recordCount"></p><div id="recordList"></div><form id="recordForm"></form></aside>
-<section class="scene-column"><div id="juryNotice" hidden><strong>서울역 · 심사 기간 저장 잠금</strong><span>확정 파사드·시설·경로·데이터를 모두 불러왔습니다. 임시 편집과 JSON 내보내기는 가능하며, 서버 저장·업로드는 심사 종료 전까지 차단됩니다. Station One 서울역 원본은 변경되지 않습니다.</span></div><div class="scene-toolbar"><label>역 선택<select id="source"><option value="S202103">서울역 · 열람 / 저장 잠금</option><option value="S201801">대전역 · 편집</option><option disabled>── VWorld 실내지도 보유 44개역 ──</option></select></label><input id="tilesetUrl" type="url" placeholder="https://…/tileset.json" aria-label="3D Tiles 주소" hidden><button id="connectSource">지도 연결</button><label>층<select id="floor"></select></label><label><input id="grid" type="checkbox" checked> 2m 참고 격자</label><button id="fit">전체 보기</button></div><div class="scene-wrap"><div id="map"></div><div id="sceneStatus" role="status">3D 렌더러 준비 중</div><div class="scene-key"><span style="--dot:#35c978">출발·도착</span><span style="--dot:#fff">경유</span><span style="--dot:#398bef">층간접속</span><span style="--dot:#f3be35">시설</span></div><div id="pickStatus">지도를 클릭하면 해당 위치 좌표를 입력합니다.</div></div><footer class="project-footer"><div><strong id="saveStatus">아직 서버에 저장되지 않은 초안</strong><p>VWorld 실내지도 보유 46개 KTX역 공통 편집기 · 연결 완료: 서울·대전 / 나머지 44개역 연결 설정 필요</p></div><button id="share">공개 링크 설정</button><a href="https://station-one-collab.soalsebi.chatgpt.site/" target="_blank" rel="noopener">프로젝트 소개 ↗</a></footer></section></main>
-<dialog id="dialog"><button id="closeDialog" aria-label="닫기">×</button><div id="dialogContent"></div></dialog><div id="notice" role="status" aria-live="polite"></div><script type="module" src="/src/main.js"></script></body></html>
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#17302a"><title>야!너두 스테이션 · 역 지도 제보</title><meta name="description" content="46개 KTX역의 3D 지도에서 현장과 다른 곳을 찾아 사진으로 알려 주세요. 승인자가 확인해 지도에 반영합니다."><link rel="icon" type="image/svg+xml" href="/favicon.svg"></head><body>
+<header class="top"><a class="brand" href="/"><b>야!너두 스테이션</b><span>함께 고치는 역 지도</span></a><nav><button id="openMine" type="button">내 제보</button><a href="/console/">제보함</a></nav></header>
+<main>
+<section id="home" class="home">
+ <div class="intro"><span class="eyebrow">OPEN STATION MAP</span><h1>지도와 현장이 다른 곳,<br>사진 한 장으로 알려 주세요.</h1><p class="lead">46개 KTX역의 3D 지도를 둘러보고 바뀐 매장, 새로 생긴 시설, 막힌 길을 제보하세요. AI가 사진을 정리하고, 승인자가 확인해 지도에 반영합니다.</p>
+  <ol class="how"><li><b>둘러보기</b><span>역과 층을 골라 3D 지도를 확인해요</span></li><li><b>위치 누르기</b><span>현장과 다른 곳을 지도에서 눌러요</span></li><li><b>사진과 설명</b><span>사진을 보면서 달라진 곳을 표시하고 적어요</span></li></ol>
+  <p class="fine">사진 속 얼굴은 공개하지 않고, 사진 위치정보는 보내기 전에 지워요. 관제·운전 시설과 보안 구역은 찍지 마세요.</p></div>
+ <div class="picker"><label class="search" for="stationSearch">역 찾기</label><input id="stationSearch" type="search" placeholder="예: 서울역, 부산역" autocomplete="off"><p id="stationCount" class="count"></p><ul id="stationList" class="stations"></ul></div>
+</section>
+<section id="station" class="station" hidden>
+ <div class="station-bar"><button id="backHome" type="button" class="ghost">← 역 목록</button><h2 id="stationTitle"></h2><label class="floor" for="floor">층</label><select id="floor"></select></div>
+ <div class="station-body">
+  <div class="map-box"><div id="map"></div><p id="sceneStatus" role="status"></p><p id="pinStatus" class="pin"></p>
+   <div id="noMap" class="no-map" hidden><b>3D 지도 연결을 준비 중인 역이에요.</b><p>위치를 글로 적고 사진을 보내 주시면 앰배서더가 확인해요. 제보가 모이는 역부터 3D 지도를 연결합니다.</p></div>
+   <button id="reportHere" type="button" class="cta">＋ 여기가 달라요</button></div>
+  <aside class="changes"><h3>승인된 변경</h3><a id="stationInbox" class="inbox-link" href="/console/">이 역 제보 진행 상황 보기 →</a><p class="fine">승인자가 확인한 변경이에요. 서울역은 심사 기간이 끝나면 지도에 반영돼요.</p><ul id="changeList"></ul><p id="stationNote" class="fine"></p></aside>
+ </div>
+</section>
+</main>
+<dialog id="sheet" aria-labelledby="sheetTitle"><form id="sheetForm" method="dialog" novalidate>
+ <header class="sheet-head"><ol class="steps" aria-label="제보 단계"><li data-step="1">위치</li><li data-step="2">사진·내용</li></ol><button type="button" id="closeSheet" class="x" aria-label="닫기">×</button></header>
+ <div class="sheet-body">
+  <section data-panel="1"><h3 id="sheetTitle">어디가 달라졌나요?</h3><div id="placeBox"></div></section>
+  <section data-panel="2" hidden><h3>무엇이 달라졌나요?</h3><div id="typeChoices" class="chips" role="radiogroup" aria-label="제보 유형"></div><p id="typeHint" class="fine"></p>
+   <div class="evidence">
+    <div class="shots-col"><ul id="shots" class="shots"></ul>
+     <label class="pick"><input id="photoInput" type="file" accept="image/jpeg,image/png,image/heic,image/*" multiple><span id="pickLabel">＋ 사진 추가 <small>(1~5장)</small></span></label>
+     <p class="fine">사진을 누르면 달라진 곳에 표시돼요. 정면에서 간판 전체가 보이게, 사람이 적을 때 찍으면 반영이 빨라요.</p></div>
+    <div class="words-col"><label for="description">자세히 적기 <small>(선택)</small></label><textarea id="description" rows="5" maxlength="500" placeholder="예: 지도엔 토니모리인데 지금은 위니비니예요"></textarea><p id="descCount" class="fine"></p></div>
+   </div>
+   <label class="consent"><input id="consent" type="checkbox"> 사진과 내용을 역 지도 개선에 쓰는 것에 동의해요.</label>
+   <p class="fine">적은 내용은 공개 제보함에서 누구나 볼 수 있어요. 사진 원본은 승인자만 보고, 공개 화면에는 알아볼 수 없게 흐린 사진만 보여요.</p></section>
+  <section data-panel="done" hidden><h3>제보가 접수됐어요</h3><p id="doneText"></p><div class="done-actions"><button type="button" id="doneMine" class="primary">내 제보 보기</button><button type="button" id="doneMore">계속 둘러보기</button></div></section>
+  <p id="sheetError" class="error" role="alert"></p>
+ </div>
+ <footer class="sheet-foot"><button type="button" id="prevStep">이전</button><button type="button" id="nextStep" class="primary">다음</button></footer>
+</form></dialog>
+<dialog id="mine" aria-labelledby="mineTitle"><header class="sheet-head"><h3 id="mineTitle">내 제보</h3><button type="button" id="closeMine" class="x" aria-label="닫기">×</button></header><div id="mineList" class="mine-list"></div></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="/src/public/app.js"></script>
+</body></html>

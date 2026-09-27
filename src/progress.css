@@ -1,0 +1,18 @@
+/* Progress line (uses the page tokens: --deep, --lime, --moss, --warn, --line, --muted, --mute-bg) */
+.stepper{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:0;counter-reset:st}
+.stepper li{position:relative;display:grid;justify-items:center;gap:3px;text-align:center;min-width:0;padding:0 2px}
+.stepper li::before{content:'';position:absolute;top:13px;left:calc(-50% + 14px);right:calc(50% + 14px);height:3px;border-radius:2px;background:var(--line)}
+.stepper li:first-child::before{display:none}
+.stepper li.done::before,.stepper li.active::before,.stepper li.paused::before,.stepper li.waiting::before,.stepper li.closed::before{background:var(--moss)}
+.stepper .dot{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;font-size:13px;font-weight:800;background:var(--mute-bg);color:var(--muted);border:2px solid transparent}
+.stepper li.done .dot{background:var(--moss);color:#fff}
+.stepper li.active .dot{background:var(--lime);color:var(--ink,#172422);border-color:var(--deep);box-shadow:0 0 0 4px #d9ed6366}
+.stepper li.paused .dot{background:#f3d9a4;color:#7a4d10;border-color:#b67d1f}
+.stepper li.waiting .dot{background:#fff;color:var(--deep);border:2px dashed var(--moss)}
+.stepper li.closed .dot{background:var(--warn-bg,#f6e3d3);color:var(--warn);border-color:var(--warn)}
+.stepper b{font-size:12px;line-height:1.3;word-break:keep-all}.stepper li.todo b{color:var(--muted);font-weight:500}
+.stepper small{font-size:11px;color:var(--muted);min-height:1.2em}
+.prog{display:inline-flex;align-items:center;gap:2px}.prog i{display:block;width:12px;height:6px;border-radius:2px;background:var(--line)}
+.prog i.done{background:var(--moss)}.prog i.active{background:var(--lime);box-shadow:inset 0 0 0 1px var(--deep)}.prog i.paused{background:#e0a441}.prog i.waiting{background:repeating-linear-gradient(90deg,var(--moss) 0 2px,#fff 2px 4px)}.prog i.closed{background:var(--warn)}
+.prog em{font-style:normal;font-size:12px;font-weight:700;margin-left:6px;color:var(--deep)}.prog.closed em{color:var(--warn)}.prog.paused em{color:#8a5a12}
+@media (max-width:420px){.stepper b{font-size:11px}.stepper small{font-size:10px}}

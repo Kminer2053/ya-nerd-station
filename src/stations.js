@@ -1,6 +1,9 @@
+import {VWORLD_STATIONS} from './vworld-stations.js';
 export const stations=[
  {id:'S202103',name:'서울역',status:'jury-locked',centre:[126.9708218,37.55363,36.19],floors:['B7','B6','B5','B4','B3','B2','B1','1F','2F','3F'],heights:{B7:-20.39,B6:-15.8,B5:-11.2,B4:-6.5,B3:5.3,B2:15.2,B1:22.2,'1F':27.2,'2F':36.19,'3F':43.2},default_floor:'2F'},
  {id:'S201801',name:'대전역',status:'available',centre:[127.43459,36.33223,60.34],floors:['1F','2F','3F','4F','5F','RF'],heights:{'1F':55.69,'2F':60.34,'3F':63.48,'4F':68.37,'5F':71.66,RF:74.33},default_floor:'3F'},
+ // 44 more KTX stations, verified against VWorld's own indoor-map list (tools/discover-vworld-sites.mjs).
+ ...VWORLD_STATIONS.map(({kname,source,...s})=>s),
 ];
 export const ktxCatalog=[
  {name:'강릉역',category:'기차역 > 고속철도'},

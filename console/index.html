@@ -1,0 +1,20 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#17302a"><title>야!너두 스테이션 · 제보함</title><meta name="description" content="역 지도 제보가 어디까지 처리됐는지 누구나 볼 수 있는 공개 제보함입니다. 보정·승인은 승인자가 합니다."><link rel="icon" type="image/svg+xml" href="/favicon.svg"></head><body>
+<header class="top"><a class="brand" href="/console/"><b>제보함</b><span>야!너두 스테이션 · 누구나 보고, 승인자가 처리해요</span></a><nav><a href="/">공개 제보</a><a href="/editor/">편집기</a><span id="who" hidden></span><button id="loginBtn" type="button" class="login">승인자 로그인</button><button id="logoutBtn" type="button" class="login ghost" hidden>로그아웃</button></nav></header>
+<main id="app" class="console">
+ <aside class="inbox" aria-label="제보 목록">
+  <div class="filters"><label for="fStation">역</label><select id="fStation"></select><button id="reload" type="button" aria-label="새로고침">↻</button></div>
+  <div id="stageBar" class="stage-bar" role="group" aria-label="진행 상태별 보기"></div>
+  <p id="inboxCount" class="fine"></p><ul id="inboxList" class="inbox-list"></ul>
+ </aside>
+ <section class="detail" aria-live="polite">
+  <div id="detailBody"><div class="welcome"><h1>제보가 지금 어디까지 왔는지 보여 드려요</h1><p>왼쪽 위 단계를 눌러 검토 대기, 제안 승인 대기, 반영 대기 제보를 골라 보세요. 누구나 진행 상황과 흐린 사진을 볼 수 있고, 사진 원본 확인과 보정·승인은 승인자만 할 수 있어요.</p></div></div>
+  <section id="map3dCard" class="card map3d" hidden><header><h3>3D 미리보기 · 서울역</h3><p class="fine">보정 결과를 실제 파사드 자리에 입혀 봅니다. 저장되지 않는 미리보기예요.</p></header><div class="map3d-box"><div id="map"></div><p id="sceneStatus" role="status"></p><select id="floor" hidden><option>2F</option></select></div></section>
+ </section>
+</main>
+<dialog id="loginDialog" aria-labelledby="loginTitle"><form id="loginForm" method="dialog" novalidate><h2 id="loginTitle">승인자 로그인</h2><p class="fine">제보를 보정·제안·승인하거나 사진 원본을 보려면 운영자가 발급한 승인자 이름과 비밀번호가 필요해요.</p>
+ <label for="loginName">이름</label><input id="loginName" autocomplete="username" maxlength="40" required>
+ <label for="loginPw">비밀번호</label><input id="loginPw" type="password" autocomplete="current-password" required>
+ <p id="loginError" class="error" role="alert"></p><div class="buttons"><button type="button" id="loginCancel">취소</button><button type="submit" class="primary" id="loginSubmit">로그인</button></div></form></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="/src/console/app.js"></script>
+</body></html>

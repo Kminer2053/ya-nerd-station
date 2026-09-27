@@ -1,12 +1,17 @@
 import {stations,stationOf,validateStation} from './stations.js';
+import {DAEJEON_CANDIDATES} from './daejeon-candidates.js';
 export const floors=['B7','B6','B5','B4','B3','B2','B1','1F','2F','3F','4F','5F','RF'];
 // Observed VWorld Daejeon floor heights, 2026-09-02. Not surveyed navigation clearance.
 export const heights={'1F':55.69,'2F':60.34,'3F':63.48,'4F':68.37,'5F':71.66,RF:74.33};
 export const roles={origin:['출발·도착','#35c978'],via:['경유포인트','#eef4f2'],connection:['층간접속','#398bef'],facility:['시설포인트','#f3be35']};
 export const centre=[127.43459,36.33223,60.34];
 export const coordinate=(x,y,z=60.34)=>[centre[0]+x/(111320*Math.cos(centre[1]*Math.PI/180)),centre[1]+y/111320,z];
-export function stationProject(station=stations[1]){validateStation(station);return {...daejeonProject(),site_id:station.id,station:structuredClone(station),source:'vworld',name:station.name+' 공동 편집 초안',notes:'역별 설정과 변경 레이어를 독립적으로 저장합니다.',origins:[],facilities:[]};}
-export function daejeonProject(){return {schema_version:1,site_id:'S201801',name:'대전역 공동 편집 초안',source:'vworld-daejeon',tileset_url:'',assets:[],points:[],connections:[],routes:[],observations:[],notes:'대전역 원본 모델 위에 독립 변경 레이어를 작성합니다. 서울역 심사본에는 반영되지 않습니다.'};}
+// Daejeon starts with facility candidates read from the VWorld texture photos (unverified; ambassadors confirm, rename or remove).
+const candidates=id=>id==='S201801'?DAEJEON_CANDIDATES.facilities:[];
+const candidatePoint=f=>({id:'FACILITY:'+f.id,name:f.name,floor:f.floor,role:'facility',position:f.position});
+const candidateRecord=f=>({id:f.id,name:f.name,floor:f.floor,position:f.position,category:f.category,hours:'',contact:'',access_id:'FACILITY:'+f.id,notes:'후보 · 현장 미확인 · 근거: '+f.basis+(f.sign_text?' · 간판: '+f.sign_text:'')+' · 텍스처 슬롯 '+f.slots.join(', '),active:true});
+export function stationProject(station=stations[1]){validateStation(station);const c=candidates(station.id);return {...daejeonProject(),site_id:station.id,station:structuredClone(station),source:'vworld',name:station.name+' 공동 편집 초안',notes:'역별 설정과 변경 레이어를 독립적으로 저장합니다.',origins:[],points:c.map(candidatePoint),facilities:c.map(candidateRecord)};}
+export function daejeonProject(){return {schema_version:1,site_id:'S201801',name:'대전역 공동 편집 초안',source:'vworld-daejeon',tileset_url:'',assets:[],points:candidates('S201801').map(candidatePoint),connections:[],routes:[],observations:[],facilities:candidates('S201801').map(candidateRecord),notes:'대전역 원본 모델 위에 독립 변경 레이어를 작성합니다. 서울역 심사본에는 반영되지 않습니다.'};}
 export function sampleProject(){return {schema_version:1,name:'나의 디지털트윈 스테이션',source:'sample',tileset_url:'',assets:[{id:'shop-a',name:'샘플 매장 A',floor:'2F',position:coordinate(-12,7),size:[8,5,3],heading:0,color:'#73a194',hidden:false,facades:{}},{id:'shop-b',name:'샘플 매장 B',floor:'2F',position:coordinate(2,7),size:[8,5,3],heading:0,color:'#baa887',hidden:false,facades:{}}],points:[{id:'entry-east',name:'동쪽 출발점 (샘플)',floor:'2F',role:'origin',position:coordinate(25,-5)},{id:'via-center',name:'중앙 경유점',floor:'2F',role:'via',position:coordinate(0,-5)},{id:'entry-west',name:'서쪽 출발점 (샘플)',floor:'2F',role:'origin',position:coordinate(-25,-5)},{id:'lift-2',name:'엘리베이터 2F (샘플)',floor:'2F',role:'connection',position:coordinate(-20,10)},{id:'lift-3',name:'엘리베이터 3F (샘플)',floor:'3F',role:'connection',position:coordinate(-20,10,63.48)},{id:'shop-entry',name:'매장 A 출입점',floor:'2F',role:'facility',position:coordinate(-12,3)}],connections:[{id:'lift-demo',name:'샘플 엘리베이터',kind:'elevator',point_ids:['lift-2','lift-3'],direction:'both'}],routes:[{id:'route-demo',name:'동 → 서 샘플 경로',point_ids:['entry-east','via-center','entry-west']}],observations:[],notes:'샘플 구조물·수치는 가상의 예제입니다. 실제 서울역 시설이 아닙니다.'};}
 export function validateProject(v){
  const fail=m=>{throw Error(m)};const obj=x=>x&&typeof x==='object'&&!Array.isArray(x);const text=(s,max=500)=>typeof s==='string'&&s.length<=max;
