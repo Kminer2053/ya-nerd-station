@@ -12,18 +12,19 @@ export const REPORT_TYPES=[
 ];
 export const typeLabel=id=>REPORT_TYPES.find(t=>t.id===id)?.label||id;
 // received → analyzing → review → queued (jury-locked station, after approval) | applied | held | duplicate | rejected
-export const STATUS={received:'접수',analyzing:'정리 중',review:'검토 대기',queued:'반영 대기',applied:'반영',held:'보류',duplicate:'중복',rejected:'반려'};
-export const DECISIONS=['held','duplicate','rejected','review'];
+export const STATUS={received:'접수',analyzing:'정리 중',review:'검토 대기',accepted:'채택 · 초안 작업',draft:'초안',ready:'최종 승인 대기',superseded:'이전 초안',queued:'반영 대기',applied:'반영',held:'보류',duplicate:'중복',rejected:'반려'};
+export const DECISIONS=['accepted','held','duplicate','rejected','review'];
 export const LIMITS={photos:5,photoBytes:4_000_000,description:500,place:200,caption:120,previewChars:16_000,previewPx:64,perDay:10,matchRadius:12,duplicateRadius:8,duplicateDays:14,reason:300};
 
 // Progress line shown to everyone: 접수 → 자동 정리 → 승인자 검토 → 보정 제안 → 승인 → 지도 반영.
 // Held pauses the line, duplicate/rejected close it, a jury-locked approval waits before the map changes.
 export const STAGES=['접수','자동 정리','승인자 검토','보정 제안','승인','지도 반영'];
-export const STAGE_FILTERS=[{id:'review',label:'검토 대기'},{id:'proposed',label:'제안 승인 대기'},{id:'queued',label:'반영 대기'},{id:'applied',label:'반영 완료'},{id:'held',label:'보류'},{id:'closed',label:'중복·반려'},{id:'all',label:'전체'}];
+export const STAGE_FILTERS=[{id:'review',label:'검토 대기'},{id:'draft',label:'채택 · 초안 작업'},{id:'proposed',label:'제안 승인 대기'},{id:'queued',label:'반영 대기'},{id:'applied',label:'반영 완료'},{id:'held',label:'보류'},{id:'closed',label:'중복·반려'},{id:'all',label:'전체'}];
 export function progressOf(status,proposal=null){
  if(status==='received')return {at:0,state:'active',bucket:'draft'};
  if(status==='analyzing')return {at:1,state:'active',bucket:'review'};
  if(status==='review')return proposal==='ready'?{at:3,state:'active',bucket:'proposed'}:{at:2,state:'active',bucket:'review'};
+ if(status==='accepted')return {at:3,state:'active',bucket:proposal==='ready'?'proposed':'draft'};
  if(status==='held')return {at:proposal==='ready'?3:2,state:'paused',bucket:'held'};
  if(status==='queued')return {at:5,state:'waiting',bucket:'queued'};
  if(status==='applied')return {at:5,state:'done',bucket:'applied'};
@@ -39,6 +40,17 @@ export const PUBLIC_STATIONS=[
 // Reports filed before a station was connected keep their 'name:<역명>' key; it still resolves to the station.
 export const stationByKey=k=>PUBLIC_STATIONS.find(s=>s.key===k)||(typeof k==='string'&&k.startsWith('name:')?PUBLIC_STATIONS.find(s=>s.name===k.slice(5))||null:null);
 export const connectedStation=k=>stations.find(s=>s.id===k)||null;
+
+// A photo does not establish real dimensions. An approver supplies measured/estimated box geometry.
+export function structurePixels(size){const k=1024/Math.max(size[0],size[2]);return [Math.max(32,Math.round(size[0]*k)),Math.max(32,Math.round(size[2]*k))];}
+export function validateStructure(v,key){
+ const s=connectedStation(key),fail=()=>{throw Error('구조물의 이름·층·위치·크기·방향을 확인하세요. 크기는 0.1~30m입니다.');};
+ if(!s||!v||typeof v.name!=='string'||!v.name.trim()||v.name.length>100||!s.floors.includes(v.floor))fail();
+ if(!Array.isArray(v.position)||v.position.length!==3||!v.position.every(Number.isFinite)||Math.abs(v.position[0]-s.centre[0])>.03||Math.abs(v.position[1]-s.centre[1])>.03||v.position[2]<-200||v.position[2]>1000)fail();
+ if(!Array.isArray(v.size)||v.size.length!==3||!v.size.every(n=>Number.isFinite(n)&&n>=.1&&n<=30)||!Number.isFinite(v.heading)||!/^#[a-fA-F0-9]{6}$/.test(v.color||''))fail();
+ if(!['estimated','measured'].includes(v.dimension_basis))fail();
+ return {name:v.name.trim(),floor:v.floor,position:v.position,size:v.size,heading:((v.heading%360)+360)%360,color:v.color,dimension_basis:v.dimension_basis};
+}
 
 const LAT_M=111320;
 export const metres=(a,b)=>{const k=Math.cos(a[1]*Math.PI/180)*LAT_M;return Math.hypot((b[0]-a[0])*k,(b[1]-a[1])*LAT_M,((b[2]??0)-(a[2]??0))*.3);};

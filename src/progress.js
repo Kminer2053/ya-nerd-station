@@ -8,6 +8,7 @@ const when=iso=>{if(!iso)return '';const d=new Date(iso);return (d.getMonth()+1)
 export const progressState=r=>r.progress||progressOf(r.status,r.proposal?.status||r.proposal_status);
 // Wording for where the report stands now.
 export function stageLabel(r,p=progressState(r)){
+ if(r.status==='accepted'&&p.bucket==='draft')return '채택 · 초안 작업';
  if(p.state==='paused')return '보류';
  if(p.state==='closed')return r.status==='duplicate'?'중복으로 종료':'반려';
  if(p.state==='waiting')return '반영 대기';

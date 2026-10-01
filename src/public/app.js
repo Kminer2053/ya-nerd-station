@@ -28,7 +28,7 @@ function ensureCesium(){if(window.Cesium)return Promise.resolve();return new Pro
  const s=document.createElement('script');s.src='https://cesium.com/downloads/cesiumjs/releases/1.142/Build/Cesium/Cesium.js';s.onload=()=>resolve();s.onerror=()=>reject(Error('3D 렌더러를 불러오지 못했어요. 사진과 위치 설명으로도 제보할 수 있어요.'));document.head.append(s);});}
 function buildProject(v){
  const st={id:v.station.key,name:v.station.name,centre:v.station.centre,floors:v.station.floors,heights:v.station.heights,default_floor:v.station.default_floor};
- return {schema_version:1,site_id:st.id,station:st,name:st.name,source:st.id==='S202103'?'seoul-snapshot':'vworld',tileset_url:'',assets:[],connections:[],routes:[],observations:[],
+ return {schema_version:1,site_id:st.id,station:st,name:st.name,source:st.id==='S202103'?'seoul-snapshot':'vworld',tileset_url:'',assets:v.assets||[],connections:[],routes:[],observations:[],
   points:[...v.facilities.map(f=>({id:'F:'+f.id,name:f.kind==='group'?'':f.name,floor:f.floor,role:f.kind==='group'?'via':'facility',position:f.position})),...v.endpoints.map(e=>({id:'E:'+e.id,name:e.name,floor:e.floor,role:'origin',position:e.position}))],
   overlays:v.overlays||[]};
 }
