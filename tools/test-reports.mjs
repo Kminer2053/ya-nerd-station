@@ -12,7 +12,7 @@ import {stationProject,validateProject} from '../src/model.js';
 import {stations as stationDefinitions} from '../src/stations.js';
 
 // Public reports → AI-assisted proposals → approver approval. Anyone reads the inbox; approvers sign in with a password.
-// Seoul is jury-locked: approvals queue, never apply.
+// Seoul final approvals apply; anonymous direct project saves remain protected.
 const db=new DatabaseSync(':memory:');for(const f of readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort())db.exec(readFileSync('drizzle/'+f,'utf8'));
 const files=new Map(),env={DB:d1Adapter(db),UPLOADS:{async put(k,b){files.set(k,b);},async get(k){return files.has(k)?{body:files.get(k)}:null;}},APPROVERS:'테스트 승인자:correct-horse-9, 짧은비번:short'};
 const BASE='https://station-one-collab.soalsebi.chatgpt.site';
@@ -104,7 +104,7 @@ const amb={jar:approverCookie};
 assert.equal((await (await call('/api/session',amb)).json()).approver,'테스트 승인자');
 let list=(await (await call('/api/console/reports',amb)).json()).reports;assert.equal(list.length,2);
 assert.equal((await call('/api/reports/photos/'+photo,amb)).status,200,'approvers see originals');
-const detail=await (await call('/api/console/reports/'+first,amb)).json();assert.equal(detail.report.photos.length,2);assert.equal(detail.report.originals,true);assert.equal(detail.locked,true);assert.equal(detail.group.length,1);
+const detail=await (await call('/api/console/reports/'+first,amb)).json();assert.equal(detail.report.photos.length,2);assert.equal(detail.report.originals,true);assert.equal(detail.locked,false);assert.equal(detail.group.length,1);
 // Facade proposal: slot size enforced, public only after approval
 assert.equal((await call('/api/console/proposals',{...amb,method:'POST',body:{report_id:first,kind:'facade',target:{alias:'F02WL072-S25'},image:dataUrl(png(200,200))}})).status,400,'slot pixel size');
 assert.equal((await call('/api/console/proposals',{...amb,method:'POST',body:{report_id:first,kind:'structure',target:{alias:'F02WL072-S25'},image:dataUrl(png(175,176))}})).status,400,'structure requires a new-structure report');
@@ -115,15 +115,16 @@ pub=await (await call('/api/console/reports/'+first,{jar:''})).json();assert.equ
 assert.equal((await call('/api/public/proposal-images/'+proposal,{jar:''})).status,404,'not public before approval');
 assert.equal((await call('/api/console/proposals/'+proposal+'/reject',{...amb,method:'POST',body:{}})).status,400,'reject needs a reason');
 res=await call('/api/console/proposals/'+proposal+'/approve',{...amb,method:'POST',body:{}});const approved=await res.json();
-assert.equal(approved.status,'queued','Seoul jury lock: queued, not applied');assert.match(approved.note,/심사/);
+assert.equal(approved.status,'applied','Seoul final approval applies immediately');assert.match(approved.note,/지도에 반영/);
 assert.equal((await call('/api/console/proposals/'+proposal+'/approve',{...amb,method:'POST',body:{}})).status,409);
 assert.equal((await call('/api/public/proposal-images/'+proposal,{jar:''})).status,200);
-assert.equal(db.prepare('SELECT count(*) AS n FROM station_layers').get().n,0,'locked station layer untouched');
-assert.deepEqual([first,second].map(id=>db.prepare('SELECT status FROM reports WHERE id=?').get(id).status),['queued','queued'],'the whole group follows');
-inbox=await (await call('/api/console/reports?stage=queued',{jar:''})).json();assert.equal(inbox.reports.length,2);assert.equal(inbox.summary.queued,2);assert.equal(inbox.summary.review,0);
-pub=await (await call('/api/console/reports/'+first,{jar:''})).json();assert.match(pub.proposals[0].image,/\/api\/public\/proposal-images\//,'approved image is public');assert.equal(pub.proposals[0].reviewer,null);assert.deepEqual(pub.report.progress,{at:5,state:'waiting',bucket:'queued'});
+assert.equal(db.prepare('SELECT count(*) AS n FROM station_layers').get().n,1,'approved Seoul layer saved');
+assert.deepEqual([first,second].map(id=>db.prepare('SELECT status FROM reports WHERE id=?').get(id).status),['applied','applied'],'the whole group follows');
+inbox=await (await call('/api/console/reports?stage=applied',{jar:''})).json();assert.equal(inbox.reports.length,2);assert.equal(inbox.summary.applied,2);assert.equal(inbox.summary.review,0);
+pub=await (await call('/api/console/reports/'+first,{jar:''})).json();assert.match(pub.proposals[0].image,/\/api\/public\/proposal-images\//,'approved image is public');assert.equal(pub.proposals[0].reviewer,null);assert.deepEqual(pub.report.progress,{at:5,state:'done',bucket:'applied'});
 const station=await (await call('/api/public/station?key=S202103',{jar:''})).json();
-assert.equal(station.changes.length,1);assert.equal(station.changes[0].name,'위니비니');assert.equal(station.changes[0].status_label,'반영 대기');assert.equal(station.facilities.length,2);assert.equal(station.endpoints.length,1);
+assert.equal(station.station.locked,false);assert.equal(station.overlays.length,1);assert.equal(station.overlays[0].alias,'F02WL072-S25');assert.equal(station.overlays[0].image,'/api/public/proposal-images/'+proposal);
+assert.equal(station.changes.length,1);assert.equal(station.changes[0].name,'위니비니');assert.equal(station.changes[0].status_label,'반영');assert.equal(station.facilities.length,2);assert.equal(station.endpoints.length,1);
 const stationsList=(await (await call('/api/public/stations',{jar:''})).json()).stations;assert.equal(stationsList.find(s=>s.key==='S202103').changes,1);
 // Other decisions need a reason the reporter can read
 res=await call('/api/reports',{method:'POST',body:report({type:'blocked',position:[126.9709,37.5537,36.2],description:'공사 중'})});const third=(await res.json()).id;
@@ -180,7 +181,7 @@ const imp={station_key:'S201801',slot:{alias:'F01_WL01-S99',name:'가져온 파�
 assert.equal((await call('/api/console/import-facade',{jar:'',method:'POST',body:imp})).status,401);
 assert.equal((await call('/api/console/import-facade',{...amb2,method:'POST',body:{...imp,slot:{...imp.slot,position:[127.9,36.3,57]}}})).status,400,'outside the station');
 assert.equal((await call('/api/console/import-facade',{...amb2,method:'POST',body:{...imp,image:dataUrl(png(300,240))}})).status,400,'exact slot size');
-assert.equal((await call('/api/console/import-facade',{...amb2,method:'POST',body:{...imp,station_key:'S202103'}})).status,409,'jury-locked Seoul refuses imports');
+assert.equal((await call('/api/console/import-facade',{...amb2,method:'POST',body:{...imp,station_key:'S202103'}})).status,400,'Seoul import still requires valid station coordinates');
 res=await call('/api/console/import-facade',{...amb2,method:'POST',body:imp});assert.equal(res.status,201);const imported=(await res.json()).id;
 const again=await (await call('/api/console/import-facade',{...amb2,method:'POST',body:imp})).json();assert.equal(again.skipped,true);assert.equal(again.id,imported,'same source id imported once');
 dj=await (await call('/api/public/station?key=S201801',{jar:''})).json();const io=dj.overlays.find(o=>o.alias==='F01_WL01-S99');
@@ -237,6 +238,7 @@ assert.equal(db.prepare('SELECT status FROM proposals WHERE id=?').get(oldDraft)
 assert.equal((await post('/api/console/proposals/'+oldDraft+'/approve',{})).status,409,'draft cannot approve');
 assert.equal((await post('/api/console/proposals/'+oldDraft+'/ready',{})).status,400,'explicit human checks');
 assert.equal((await call('/api/public/proposal-images/'+oldDraft,{jar:''})).status,404);
+assert.deepEqual((await (await call('/api/public/station?key=S202103',{jar:''})).json()).assets,[],'unapproved Seoul structure is not public');
 pub=await (await call('/api/console/reports/'+f.id,{jar:''})).json();assert.equal(pub.proposals[0].image,null);assert.equal(pub.proposals[0].meta,null);assert.equal(pub.report.progress.bucket,'draft');
 assert.equal((await post('/api/console/proposals',input)).status,409,'stale draft version');
 const edit=draftInput(f),saves=await Promise.all([post('/api/console/proposals',edit),post('/api/console/proposals',edit)]);
@@ -248,9 +250,9 @@ await post('/api/console/reports/'+f.id+'/decision',{status:'review'});assert.eq
 assert.equal((await (await call('/api/console/reports/'+f.id,amb2)).json()).report.progress.bucket,'proposed');
 const approvals=await Promise.all([post('/api/console/proposals/'+draft+'/approve',{}),post('/api/console/proposals/'+draft+'/approve',{})]);
 assert.deepEqual(approvals.map(r=>r.status).sort(),[200,409],'double approval once');
-assert.equal(db.prepare('SELECT status FROM proposals WHERE id=?').get(draft).status,'queued');
-assert.equal(db.prepare("SELECT count(*) AS n FROM station_layers WHERE station_key='S202103'").get().n,0,'Seoul untouched');
-assert.deepEqual((await (await call('/api/public/station?key=S202103')).json()).assets,[]);
+assert.equal(db.prepare('SELECT status FROM proposals WHERE id=?').get(draft).status,'applied');
+assert.equal(db.prepare("SELECT count(*) AS n FROM station_layers WHERE station_key='S202103'").get().n,1,'Seoul approved layer active');
+const seoulApproved=await (await call('/api/public/station?key=S202103')).json();assert.equal(seoulApproved.assets.length,1);assert.equal(seoulApproved.assets[0].proposal,draft);assert.equal(seoulApproved.station.locked,false);assert.equal(seoulApproved.overlays.length,1,'new structure preserves approved facade');
 assert.equal((await post('/api/console/reports/'+f.id+'/decision',{status:'review'})).status,409,'approved report cannot reopen');
 // Rejected/held reports cannot approve an old ready proposal.
 const held=await fresh('S201807');await accept(held);const hd=(await (await post('/api/console/proposals',draftInput(held))).json()).id;await ready(hd);
@@ -271,4 +273,4 @@ assert.doesNotThrow(()=>validateProject({...stationProject(stationDefinitions.fi
 const nearA=await fresh('S201807',.0007),nearB=await fresh('S201807',.00071);await accept(nearA);await accept(nearB);
 const nearDraft=(await (await post('/api/console/proposals',draftInput(nearA))).json()).id;await ready(nearDraft);assert.equal((await post('/api/console/proposals/'+nearDraft+'/approve',{})).status,200);
 assert.equal(db.prepare('SELECT status FROM reports WHERE id=?').get(nearB.id).status,'accepted','neighbour is still pending');
-console.log('PASS: public reports regression + new structure adoption/draft/reload/version conflict, input/photo validation, private draft, explicit human checks, concurrent saves and approvals, Seoul jury lock, held-source guard, transaction rollback and public applied assets');
+console.log('PASS: public reports regression + new structure adoption/draft/reload/version conflict, input/photo validation, private draft, explicit human checks, concurrent saves and approvals, Seoul approved map application, held-source guard, transaction rollback and public applied assets');

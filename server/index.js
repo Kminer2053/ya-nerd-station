@@ -9,7 +9,7 @@ export default {async fetch(request,env,ctx){const u=new URL(request.url),p=u.pa
  // Public reports and the ambassador console (report → AI analysis → ambassador approval).
  const reports=await reportsApi(request,env,ctx,{json,bytes,digest});if(reports)return reports;
  if(p==='/api/seoul/snapshot'||p==='/api/seoul/hourly'){
-  if(request.method!=='GET')return json({error:'서울역 심사본 저장 잠금'},423);
+  if(request.method!=='GET')return json({error:'서울역 원본 직접 저장 보호'},423);
   const base=env.LOCAL_PREVIEW?'http://127.0.0.1:4196':'https://station-one-collab.soalsebi.chatgpt.site';
   const origin=u.searchParams.get('origin');if(p.endsWith('hourly')&&!/^[A-Z0-9_-]{1,100}$/.test(origin||''))return json({error:'원점 ID 오류'},400);
   try{const url=p.endsWith('snapshot')?base+'/api/toolkit/seoul':base+'/data/experience/origins/'+origin+'.json';const r=await fetch(url,{signal:AbortSignal.timeout(20000)});if(!r.ok)throw Error('기준 자료 응답 '+r.status);return json(await r.json());}catch(e){return json({error:'서울역 확정 자료 연결 실패. '+e.message},503);}
@@ -23,7 +23,7 @@ export default {async fetch(request,env,ctx){const u=new URL(request.url),p=u.pa
    if(!env.DB)return json({error:'서버 저장소 연결을 확인하세요.'},503);
    if(p==='/api/projects'&&request.method==='GET')return json(owner?(await env.DB.prepare('SELECT id,name,revision,updated_at,shared FROM editor_projects WHERE owner_hash=? ORDER BY updated_at DESC').bind(owner).all()).results:[]);
    if(p==='/api/projects'&&request.method==='POST'){
-     const raw=await bytes(request,20_000_000),input=raw.length?JSON.parse(new TextDecoder().decode(raw)):{};if(saveLocked(input.project||{}))return json({error:'심사 기간 서울역은 임시 편집만 가능합니다. 원본과 공개 편집기 모두 서울역 저장을 차단합니다.',jury_locked:true},423);const body=validateProject(input.project||sampleProject());const id=crypto.randomUUID(),secret=token||crypto.randomUUID(),hash=await digest(secret),now=new Date().toISOString();
+     const raw=await bytes(request,20_000_000),input=raw.length?JSON.parse(new TextDecoder().decode(raw)):{};if(saveLocked(input.project||{}))return json({error:'서울역 원본 직접 저장은 보호됩니다. 제보함에서 관리자 최종 승인 후 지도에 반영하세요.',jury_locked:false,direct_save_locked:true},423);const body=validateProject(input.project||sampleProject());const id=crypto.randomUUID(),secret=token||crypto.randomUUID(),hash=await digest(secret),now=new Date().toISOString();
      const count=await env.DB.prepare('SELECT count(*) AS total FROM editor_projects WHERE owner_hash=?').bind(hash).first();if(count.total>=30)return json({error:'브라우저별 프로젝트는 30개까지입니다. JSON으로 내보내 기존 프로젝트를 활용하세요.'},429);
      const inserted=await env.DB.prepare('INSERT INTO editor_projects (id,owner_hash,name,revision,shared,body,updated_at) SELECT ?,?,?,?,?,?,? WHERE (SELECT count(*) FROM editor_projects)<200 AND (SELECT COALESCE(sum(length(body)),0) FROM editor_projects)+?<64000000').bind(id,hash,body.name,0,0,JSON.stringify(body),now,JSON.stringify(body).length).run();
      if(!inserted.meta.changes)return json({error:'공개 시연 저장 한도에 도달했습니다. JSON 내보내기를 이용하세요. 저장 한도는 자동 증설하지 않습니다.'},429);
@@ -35,7 +35,7 @@ export default {async fetch(request,env,ctx){const u=new URL(request.url),p=u.pa
    const id=m?.[1]||file.project_id,r=await env.DB.prepare('SELECT * FROM editor_projects WHERE id=?').bind(id).first();if(!r||r.owner_hash!==owner&&!r.shared)return json({error:'프로젝트가 없거나 공개되지 않았습니다.'},404);
    const canEdit=r.owner_hash===owner;
    if(writing&&!canEdit)return json({error:'공개 프로젝트는 복사한 뒤 수정하세요.'},403);
-   if(writing&&saveLocked(JSON.parse(r.body)))return json({error:'서울역 심사본 저장·업로드 잠금',jury_locked:true},423);
+   if(writing&&saveLocked(JSON.parse(r.body)))return json({error:'서울역 원본 직접 저장·업로드 보호',jury_locked:false,direct_save_locked:true},423);
    if(file&&request.method==='GET'){if(!env.UPLOADS)return json({error:'이미지 저장소 연결 실패'},503);const object=await env.UPLOADS.get(fm[1]);return object?new Response(object.body,{headers:{'Content-Type':file.mime,'X-Content-Type-Options':'nosniff','Cache-Control':'private,max-age=3600'}}):json({error:'이미지 없음'},404);}
    if(m?.[2]&&request.method==='POST'){
      if(!env.UPLOADS)return json({error:'이미지 저장소가 연결되지 않았습니다.'},503);const a=await bytes(request,4_000_000),isPng=a[0]===137&&a[1]===80&&a[2]===78&&a[3]===71,isJpeg=a[0]===255&&a[1]===216&&a[2]===255;if(!isPng&&!isJpeg)return json({error:'PNG 또는 JPEG 사진만 업로드하세요. 최대 4MB.'},400);
@@ -44,7 +44,7 @@ export default {async fetch(request,env,ctx){const u=new URL(request.url),p=u.pa
    }
    if(request.method==='GET')return json({id,project:JSON.parse(r.body),revision:r.revision,shared:Boolean(r.shared),canEdit});
    if(request.method==='PUT'){
-     const input=JSON.parse(new TextDecoder().decode(await bytes(request,20_000_000)));if(saveLocked(input.project||{}))return json({error:'서울역 심사본 저장 잠금',jury_locked:true},423);const body=validateProject(input.project);if(!Number.isInteger(input.revision)||typeof input.shared!=='boolean')return json({error:'리비전·공개 설정 오류'},400);
+     const input=JSON.parse(new TextDecoder().decode(await bytes(request,20_000_000)));if(saveLocked(input.project||{}))return json({error:'서울역 원본 직접 저장 보호',jury_locked:false,direct_save_locked:true},423);const body=validateProject(input.project);if(!Number.isInteger(input.revision)||typeof input.shared!=='boolean')return json({error:'리비전·공개 설정 오류'},400);
      const total=await env.DB.prepare('SELECT COALESCE(sum(length(body)),0) AS size FROM editor_projects').first();if(total.size-r.body.length+JSON.stringify(body).length>64000000)return json({error:'시연 데이터 저장 한도에 도달했습니다. JSON으로 내보내세요.'},429);
      const now=new Date().toISOString(),out=await env.DB.prepare('UPDATE editor_projects SET name=?,body=?,revision=?,shared=?,updated_at=? WHERE id=? AND owner_hash=? AND revision=?').bind(body.name,JSON.stringify(body),input.revision+1,input.shared?1:0,now,id,owner,input.revision).run();
      if(!out.meta.changes)return json({error:'다른 창에서 수정했습니다. 현재 초안을 내보낸 후 새로 불러오세요.'},409);return json({saved:true,revision:input.revision+1,updated_at:now});

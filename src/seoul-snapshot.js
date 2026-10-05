@@ -2,7 +2,7 @@ import {stationProject} from './model.js';
 import {stations} from './stations.js';
 export function adaptSeoulSnapshot(s,base){
  const p=stationProject(stations[0]),r=s.register;
- p.name='서울역 · 확정 설정 전체 / 심사 저장 잠금';p.source='seoul-snapshot';p.revision=s.revision;p.notes='심사 기간에는 열람·임시 편집·JSON 내보내기만 가능합니다. 서버 저장 및 파사드 업로드는 차단됩니다.';
+ p.name='서울역 · 확정 설정 / 승인된 제보 반영';p.source='seoul-snapshot';p.revision=s.revision;p.notes='관리자 최종 승인한 제보는 지도에 반영됩니다. 원본 설정의 직접 저장·업로드는 차단되며 임시 편집과 JSON 내보내기가 가능합니다.';
  p.points=s.graph.points.map(v=>({id:v[0],name:v[0],floor:v[1],role:'via',position:v.slice(2,5)}));
  const byId=new Map(p.points.map(p=>[p.id,p]));
  const validation=new Map((s.validation_points||[]).map(v=>[v.review_id,v]));

@@ -4,7 +4,7 @@ const VWORLD_TILES='https://cdn.vworld.kr/TDServer/services/map4/7Iuk64K0/';
 
 // labels: status lines for the page using the map (editor, public reports, ambassador console).
 export async function createScene(onPick,{labels={}}={}){
- const say={loading:'서울역 확정 설정 로드됨 · 최신 지도 연결 중…',ready:'서울역 최신 파사드·시설 반영 · 임시 편집 / 저장 잠금',...labels};
+ const say={loading:'서울역 확정 설정 로드됨 · 최신 지도 연결 중…',ready:'서울역 최신 파사드·시설 · 최종 승인 제보 반영 / 직접 저장 보호',...labels};
  const host=document.querySelector('#map');host.innerHTML='<div id="nativeMap" style="position:absolute;inset:0"></div><iframe id="seoulMap" title="서울역 최신화 지도 · 편집 미리보기" hidden style="position:absolute;inset:0;width:100%;height:100%;border:0"></iframe>';
  let native=null,project,selected=null,ready=false,isSeoul=false,pending=[];
  const frame=document.querySelector('#seoulMap'),base=seoulOrigin();

@@ -2,7 +2,7 @@
 // Anyone can report (a device cookie or a Sites sign-in) and anyone can read the inbox. Original photos are seen only by
 // the reporter and approvers; everyone else gets a tiny mosaic made in the reporter's browser. Processing (decisions,
 // facade proposals, approval) needs an approver session: a name and password from APPROVERS (local preview: a generated
-// local account). A jury-locked station (Seoul) queues approvals, never applies them.
+// local account). Station-level maintenance locks may queue approvals; Seoul accepts final administrator approvals.
 import {validateReportInput,validateStructure,structurePixels,stationByKey,connectedStation,PUBLIC_STATIONS,LIMITS,STATUS,DECISIONS,STAGE_FILTERS,nearest,ruleConfidence,metres,typeLabel,progressOf} from '../src/reports.js';
 import {analyzeWithAI} from './ai.js';
 import {DAEJEON_CANDIDATES} from '../src/daejeon-candidates.js';
@@ -124,7 +124,7 @@ export async function reportsApi(request,env,ctx,{json,bytes,digest}){
    const c=connectedStation(s.key);let data={slots:[],facilities:[],endpoints:[]},note=null;
    if(c)try{data=await stationData(env,s.key);}catch(e){note='등록 시설을 불러오지 못했어요. 3D 지도와 제보는 쓸 수 있어요.';}
    if(s.key==='S201801'&&!note)note=DAEJEON_CANDIDATES.notice;
-   // Approved facades of an unlocked station, placed on their slots (Seoul stays locked: queued, not drawn).
+   // Approved facades, including Seoul, placed on their registered slots.
    const layer=c&&!s.locked?parse((await db.prepare('SELECT body FROM station_layers WHERE station_key=?').bind(s.key).first())?.body,null):null;
    // Imported facades carry their own slot geometry; proposals made here use the station's slot register.
    const overlays=Object.entries(layer?.facades||{}).map(([alias,v])=>{const g=v.slot||data.slots.find(x=>x.alias===alias);return g&&v.front?{alias,name:g.name,floor:g.floor,position:g.position,heading:g.heading,surface:g.surface,px:g.px,image:v.front,at:v.at}:null;}).filter(Boolean);
@@ -253,7 +253,7 @@ export async function reportsApi(request,env,ctx,{json,bytes,digest}){
    if(p==='/api/console/import-facade'&&method==='POST'){
     const v=await body(7_000_000),st=stationByKey(v.station_key),c=connectedStation(v.station_key),g=v.slot||{},num=Number.isFinite;
     if(!st||!c)return json({error:'3D가 연결된 역에만 가져올 수 있어요.'},400);
-    if(st.locked)return json({error:'심사 기간인 역에는 가져올 수 없어요.'},409);
+    if(st.locked)return json({error:'지도 반영이 잠긴 역에는 가져올 수 없어요.'},409);
     const geometry=typeof g.alias==='string'&&/^[\w-]{1,80}$/.test(g.alias)&&c.floors.includes(g.floor)&&Array.isArray(g.position)&&g.position.length===3&&g.position.every(num)&&Math.abs(g.position[0]-c.centre[0])<.03&&Math.abs(g.position[1]-c.centre[1])<.03
      &&num(g.heading)&&Array.isArray(g.surface)&&g.surface.length===2&&g.surface.every(n=>num(n)&&n>0&&n<200)&&Array.isArray(g.px)&&g.px.length===2&&g.px.every(n=>Number.isInteger(n)&&n>0&&n<=8192);
     if(!geometry)return json({error:'파사드 자리 정보를 확인하세요.'},400);
@@ -326,7 +326,7 @@ export async function reportsApi(request,env,ctx,{json,bytes,digest}){
      const value=pr.kind==='structure'?{...validateStructure(target.structure,pr.station_key),id:assetId,hidden:false,facades:{front},proposal:pr.id}:{front,proposal:pr.id,at:now};
      const path=pr.kind==='structure'?'$.assets."'+assetId+'"':'$.facades."'+target.alias+'"';
      commands.push(db.prepare("INSERT INTO station_layers (station_key,revision,body,updated_at) SELECT ?,1,json_set('{}',?,json(?)),? WHERE EXISTS (SELECT 1 FROM proposals WHERE id=? AND status='applying') ON CONFLICT(station_key) DO UPDATE SET revision=station_layers.revision+1,body=json_set(station_layers.body,?,json(?)),updated_at=excluded.updated_at").bind(pr.station_key,path,JSON.stringify(value),now,pr.id,path,JSON.stringify(value)));}
-    const note=locked?'심사 기간 서울역은 반영 대기로 보관합니다. 잠금 해제 후 별도 반영이 필요해요.':'지도에 반영됐어요';
+    const note=locked?'지도 반영 잠금으로 대기 중입니다. 잠금 해제 후 별도 반영이 필요해요.':'지도에 반영됐어요';
     commands.push(db.prepare("UPDATE reports SET status=?,reason=NULL,history=json_insert(history,'$[#]',json(?)),updated_at=? WHERE (id=? OR (?='facade' AND group_id IS NOT NULL AND group_id=(SELECT group_id FROM reports WHERE id=?))) AND status IN ('review','accepted','held','analyzing') AND EXISTS (SELECT 1 FROM proposals WHERE id=? AND status='applying')").bind(status,JSON.stringify({status,at:now,note}),now,reportId,pr.kind,reportId,pr.id));
     commands.push(db.prepare("INSERT INTO audit_log (id,actor,action,target,detail,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM proposals WHERE id=? AND status='applying')").bind(crypto.randomUUID(),me.approver,'proposal.'+status,pr.id,JSON.stringify({alias:target.alias}),now,pr.id));
     commands.push(db.prepare("UPDATE proposals SET status=?,reviewer=?,decided_at=? WHERE id=? AND status='applying'").bind(status,me.approver,now,pr.id));
