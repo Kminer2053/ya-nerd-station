@@ -12,7 +12,7 @@ export const REPORT_TYPES=[
 ];
 export const typeLabel=id=>REPORT_TYPES.find(t=>t.id===id)?.label||id;
 // received → analyzing → review → queued (jury-locked station, after approval) | applied | held | duplicate | rejected
-export const STATUS={received:'접수',analyzing:'정리 중',review:'검토 대기',accepted:'채택 · 초안 작업',draft:'초안',ready:'최종 승인 대기',superseded:'이전 초안',queued:'반영 대기',applied:'반영',held:'보류',duplicate:'중복',rejected:'반려'};
+export const STATUS={received:'접수',analyzing:'정리 중',review:'검토 대기',accepted:'채택 · 초안 작업',draft:'초안',ready:'최종 승인 대기',superseded:'이전 초안',queued:'반영 대기',applied:'반영',reverted:'복원 완료',held:'보류',duplicate:'중복',rejected:'반려'};
 export const DECISIONS=['accepted','held','duplicate','rejected','review'];
 export const LIMITS={photos:5,photoBytes:4_000_000,description:500,place:200,caption:120,previewChars:16_000,previewPx:64,perDay:10,matchRadius:12,duplicateRadius:8,duplicateDays:14,reason:300};
 export const PHOTO_VIEWS=[

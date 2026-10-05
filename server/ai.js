@@ -45,17 +45,23 @@ export function parseAI(raw,photoCount){
 
 export async function analyzeWithAI(env,{photos,report,slot,facility},fetcher=fetch){
  if(!env.AI_API_KEY)return null;
- const selected=photos.slice(0,LIMITS.photos),provider=String(env.AI_PROVIDER||'anthropic').toLowerCase(),images=selected.map(p=>({mime:p.mime,data:b64(p.bytes)})),prompt=buildPrompt({report,slot,facility,photos:selected});
+ const selected=photos.slice(0,LIMITS.photos),provider=String(env.AI_PROVIDER||'anthropic').toLowerCase(),prompt=buildPrompt({report,slot,facility,photos:selected});
+ const raw=await requestVision(env,{photos:selected,prompt,maxTokens:1500},fetcher);
+ return {...parseAI(raw,selected.length),provider,model:provider==='anthropic'?(env.AI_MODEL||'claude-sonnet-5'):env.AI_MODEL};
+}
+export async function requestVision(env,{photos,prompt,maxTokens=3500,timeoutMs=45000},fetcher=fetch){
+ if(!env.AI_API_KEY)throw Error('운영자가 AI API 비밀키를 설정해야 자동 작업을 실행할 수 있습니다.');
+ const provider=String(env.AI_PROVIDER||'anthropic').toLowerCase(),images=photos.map(p=>({mime:p.mime,data:b64(p.bytes)}));
  let raw;
  if(provider==='anthropic'){
-  const r=await fetcher('https://api.anthropic.com/v1/messages',{method:'POST',signal:AbortSignal.timeout(45000),headers:{'x-api-key':env.AI_API_KEY,'anthropic-version':'2023-06-01','content-type':'application/json'},
-   body:JSON.stringify({model:env.AI_MODEL||'claude-sonnet-5',max_tokens:1500,messages:[{role:'user',content:[...images.map(i=>({type:'image',source:{type:'base64',media_type:i.mime,data:i.data}})),{type:'text',text:prompt}]}]})});
+  const r=await fetcher('https://api.anthropic.com/v1/messages',{method:'POST',signal:AbortSignal.timeout(timeoutMs),headers:{'x-api-key':env.AI_API_KEY,'anthropic-version':'2023-06-01','content-type':'application/json'},
+   body:JSON.stringify({model:env.AI_MODEL||'claude-sonnet-5',max_tokens:maxTokens,messages:[{role:'user',content:[...images.map(i=>({type:'image',source:{type:'base64',media_type:i.mime,data:i.data}})),{type:'text',text:prompt}]}]})});
   if(!r.ok)throw Error('AI 응답 '+r.status);const v=await r.json();raw=(v.content||[]).map(c=>c.text||'').join('');
  }else if(provider==='openai'){
   if(!env.AI_MODEL)throw Error('AI_MODEL을 설정하세요.');
-  const r=await fetcher('https://api.openai.com/v1/chat/completions',{method:'POST',signal:AbortSignal.timeout(45000),headers:{authorization:'Bearer '+env.AI_API_KEY,'content-type':'application/json'},
+  const r=await fetcher('https://api.openai.com/v1/chat/completions',{method:'POST',signal:AbortSignal.timeout(timeoutMs),headers:{authorization:'Bearer '+env.AI_API_KEY,'content-type':'application/json'},
    body:JSON.stringify({model:env.AI_MODEL,response_format:{type:'json_object'},messages:[{role:'user',content:[{type:'text',text:prompt},...images.map(i=>({type:'image_url',image_url:{url:'data:'+i.mime+';base64,'+i.data}}))]}]})});
   if(!r.ok)throw Error('AI 응답 '+r.status);const v=await r.json();raw=v.choices?.[0]?.message?.content;
  }else throw Error('지원하지 않는 AI_PROVIDER입니다.');
- return {...parseAI(raw,images.length),provider,model:provider==='anthropic'?(env.AI_MODEL||'claude-sonnet-5'):env.AI_MODEL};
+ return raw;
 }

@@ -6,6 +6,7 @@
 import {validateReportInput,validateStructure,structurePixels,validatePhotoView,STRUCTURE_FACES,stationByKey,connectedStation,PUBLIC_STATIONS,LIMITS,STATUS,DECISIONS,STAGE_FILTERS,nearest,ruleConfidence,metres,typeLabel,progressOf} from '../src/reports.js';
 import {analyzeWithAI} from './ai.js';
 import {DAEJEON_CANDIDATES} from '../src/daejeon-candidates.js';
+import {aiWorkApi,workDetail} from './ai-work.js';
 
 export const seoulBase=env=>env.LOCAL_PREVIEW?'http://127.0.0.1:4196':'https://station-one-collab.soalsebi.chatgpt.site';
 let seoulCache=null;
@@ -100,7 +101,7 @@ const photosOf=async(db,id)=>(await db.prepare('SELECT id,width,height,caption,m
 const photoRow=(ph,full)=>({id:ph.id,caption:ph.caption||'',mark:parse(ph.mark),view_role:ph.view_role||'unknown',width:ph.width,height:ph.height,src:full?'/api/reports/photos/'+ph.id:null,preview:ph.preview_size?'/api/public/report-previews/'+ph.id:null});
 const faceObject=(id,side)=>'proposal/'+id+(side==='front'?'':'/'+side);
 const faceUrl=(id,side,publicImage=false)=>(publicImage?'/api/public/proposal-images/':'/api/console/proposal-images/')+id+(side==='front'?'':'/'+side);
-const proposalFaces=pr=>{const faces=parse(pr.meta,{})?.faces;return faces&&typeof faces==='object'?Object.keys(faces).filter(s=>STRUCTURE_FACES.includes(s)):['front'];};
+const proposalFaces=pr=>{if(pr.kind==='removal')return [];const faces=parse(pr.meta,{})?.faces;return faces&&typeof faces==='object'?Object.keys(faces).filter(s=>STRUCTURE_FACES.includes(s)):['front'];};
 const proposalImages=(pr,allowed,publicImage=false)=>allowed?Object.fromEntries(proposalFaces(pr).map(s=>[s,faceUrl(pr.id,s,publicImage)])):null;
 const proposalsOf=async(db,id)=>(await db.prepare("SELECT id,kind,target,meta,status,confidence,reviewer,created_at,decided_at,reason FROM proposals WHERE report_ids LIKE ? ORDER BY CASE WHEN status IN ('draft','ready','queued','applied') THEN 0 ELSE 1 END,created_at DESC").bind('%'+id+'%').all()).results;
 const brief=p=>p?{status:p.status,created_at:p.created_at,decided_at:p.decided_at}:null;
@@ -134,7 +135,7 @@ export async function reportsApi(request,env,ctx,{json,bytes,digest}){
    const layer=c&&!s.locked?parse((await db.prepare('SELECT body FROM station_layers WHERE station_key=?').bind(s.key).first())?.body,null):null;
    // Imported facades carry their own slot geometry; proposals made here use the station's slot register.
    const overlays=Object.entries(layer?.facades||{}).map(([alias,v])=>{const g=v.slot||data.slots.find(x=>x.alias===alias);return g&&v.front?{alias,name:g.name,floor:g.floor,position:g.position,heading:g.heading,surface:g.surface,px:g.px,image:v.front,at:v.at}:null;}).filter(Boolean);
-   const changes=(await db.prepare("SELECT id,target,status,decided_at FROM proposals WHERE station_key=? AND status IN ('queued','applied') ORDER BY decided_at DESC LIMIT 20").bind(s.key).all()).results.map(r=>{const t=parse(r.target,{});return {id:r.id,name:t.name||t.alias,alias:t.alias,before:t.before||null,after:'/api/public/proposal-images/'+r.id,status:r.status,status_label:STATUS[r.status],decided_at:r.decided_at};});
+   const changes=(await db.prepare("SELECT id,kind,target,status,decided_at FROM proposals WHERE station_key=? AND status IN ('queued','applied') ORDER BY decided_at DESC LIMIT 20").bind(s.key).all()).results.map(r=>{const t=parse(r.target,{});return {id:r.id,kind:r.kind,name:t.name||t.alias,alias:t.alias,before:t.before||null,after:r.kind==='removal'?null:'/api/public/proposal-images/'+r.id,status:r.status,status_label:STATUS[r.status],decided_at:r.decided_at};});
    return json({station:{...s,...(c?{floors:c.floors,default_floor:c.default_floor,centre:c.centre,heights:c.heights}:{})},note,
     assets:Object.values(layer?.assets||{}),facilities:data.facilities.map(f=>({id:f.id,name:f.name,floor:f.floor,category:f.category,kind:f.kind||'facility',position:f.position})),endpoints:data.endpoints,overlays,
     slots:data.slots.map(x=>({alias:x.alias,name:x.name,floor:x.floor,position:x.position,heading:x.heading})),changes},200,OPEN);
@@ -238,16 +239,16 @@ export async function reportsApi(request,env,ctx,{json,bytes,digest}){
     if(!m[2]&&method==='GET'){
      const full=Boolean(me.approver||reporter&&r.reporter_hash===reporter),hidden=r.status==='rejected'&&!me.approver,prs=await proposalsOf(db,r.id);
      const group=r.group_id?(await db.prepare('SELECT id,status,created_at FROM reports WHERE group_id=? AND id<>? ORDER BY created_at').bind(r.group_id,r.id).all()).results.map(g=>({...g,status_label:STATUS[g.status]})):[];
-     const proposals=prs.map(x=>({...x,meta:me.approver?parse(x.meta,{}):null,reviewer:me.approver?x.reviewer:null,target:parse(x.target,{}),images:proposalImages(x,me.approver||['queued','applied'].includes(x.status),!me.approver),image:me.approver?'/api/console/proposal-images/'+x.id:['queued','applied'].includes(x.status)?'/api/public/proposal-images/'+x.id:null}));
+     const proposals=prs.map(x=>({...x,meta:me.approver?parse(x.meta,{}):null,reviewer:me.approver?x.reviewer:null,target:parse(x.target,{}),images:proposalImages(x,me.approver||['queued','applied'].includes(x.status),!me.approver),image:x.kind==='removal'?null:me.approver?'/api/console/proposal-images/'+x.id:['queued','applied'].includes(x.status)?'/api/public/proposal-images/'+x.id:null}));
      const base=baseRow(r);
      return json({report:{...base,description:hidden?'':base.description,place_note:hidden?'':base.place_note,hidden,position:parse(r.position),view:parse(r.view),group_id:r.group_id,user:Boolean(r.user_id),
       updated_at:r.updated_at,analysis:hidden?null:parse(r.analysis),photos:hidden?[]:(await photosOf(db,r.id)).map(x=>photoRow(x,full)),originals:full,proposal:brief(prs[0]),progress:progressOf(r.status,prs[0]?.status)},
-      group,proposals,locked:Boolean(stationByKey(r.station_key)?.locked),approver:me.approver});
+      group,proposals,work:me.approver?await workDetail(env,r):null,locked:Boolean(stationByKey(r.station_key)?.locked),approver:me.approver});
     }
     if(!me.approver)return needApprover();
     if(m[2]==='decision'&&method==='POST'){const v=await body();if(!DECISIONS.includes(v.status))return json({error:'판단을 골라 주세요.'},400);const reason=String(v.reason||'').trim().slice(0,LIMITS.reason);if(!['review','accepted'].includes(v.status)&&!reason)return json({error:'제보자에게 보일 사유를 적어 주세요.'},400);
      if(['queued','applied'].includes(r.status))return json({error:'이미 승인된 제보입니다. 승인 결과를 임의로 되돌릴 수 없어요.'},409);
-     if(v.status==='accepted'&&(!['review','held'].includes(r.status)||!['new','facade'].includes(r.type)))return json({error:'새 구조물 또는 파사드 제보를 검토한 뒤 채택해 주세요.'},409);
+     if(v.status==='accepted'&&(!['review','held'].includes(r.status)||!['new','facade','removed'].includes(r.type)))return json({error:'새 구조물·파사드·철거 제보를 검토한 뒤 채택해 주세요.'},409);
      const changed=await db.prepare('UPDATE reports SET status=?,reason=?,history=?,updated_at=? WHERE id=? AND status=? AND updated_at=?').bind(v.status,reason||null,stepped(r.history,v.status,reason),now,r.id,r.status,r.updated_at).run();
      if(!changed.meta.changes)return json({error:'다른 창에서 변경됐어요. 다시 불러오세요.'},409);
      await audit(db,me.approver,'report.'+v.status,r.id,{reason});
@@ -257,6 +258,7 @@ export async function reportsApi(request,env,ctx,{json,bytes,digest}){
    }
    if(p==='/api/console/station'&&method==='GET'){const key=u.searchParams.get('key');if(!connectedStation(key))return json({error:'3D가 연결된 역만 볼 수 있어요.'},400);const d=await stationData(env,key);return json({slots:d.slots});}
    if(!me.approver)return needApprover();
+   const workResponse=await aiWorkApi(request,env,ctx,{json,body,bytes,me,stationData,imageInfo,audit});if(workResponse)return workResponse;
    // Facades approved elsewhere (the retired Supabase workbench): stored like an applied proposal, idempotent per source id.
    if(p==='/api/console/import-facade'&&method==='POST'){
     const v=await body(7_000_000),st=stationByKey(v.station_key),c=connectedStation(v.station_key),g=v.slot||{},num=Number.isFinite;
@@ -316,9 +318,11 @@ export async function reportsApi(request,env,ctx,{json,bytes,digest}){
    }
    m=p.match(/^\/api\/console\/proposal-images\/([a-f0-9-]{36})(?:\/(front|left|right|back))?$/);
    if(m&&method==='GET'){const r=await db.prepare('SELECT mime,meta FROM proposals WHERE id=?').bind(m[1]).first(),side=m[2]||'front';const b=r&&proposalFaces(r).includes(side)&&await readObject(env,faceObject(m[1],side));return b?new Response(b,{headers:{'Content-Type':parse(r.meta,{})?.faces?.[side]?.mime||r.mime,'Cache-Control':'private,max-age=600','X-Content-Type-Options':'nosniff'}}):json({error:'이미지가 없어요.'},404);}
-   m=p.match(/^\/api\/console\/proposals\/([a-f0-9-]{36})\/(ready|approve|reject)$/);
+   m=p.match(/^\/api\/console\/proposals\/([a-f0-9-]{36})\/(ready|approve|reject|undo)$/);
    if(m&&method==='POST'){
     const pr=await db.prepare('SELECT * FROM proposals WHERE id=?').bind(m[1]).first();if(!pr)return json({error:'제안이 없어요.'},404);
+    const aiResponse=await aiWorkApi(request,env,ctx,{json,body,bytes,me,stationData,imageInfo,audit},pr);if(aiResponse)return aiResponse;
+    if(m[2]==='undo')return json({error:'자동 숨김·생성 작업에만 복원을 지원합니다.'},409);
     if(!['draft','ready'].includes(pr.status))return json({error:'이미 판단했거나 새 초안으로 대체된 제안이에요.'},409);
     const v=await body();
     const reportId=parse(pr.report_ids,[])[0],source=await db.prepare('SELECT status FROM reports WHERE id=?').bind(reportId||'').first();
