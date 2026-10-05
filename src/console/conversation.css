@@ -30,7 +30,11 @@ summary{cursor:pointer;font-weight:700;line-height:1.7}
 @media(min-width:1100px){
  .console{grid-template-columns:280px minmax(0,1fr)}
  .detail:has(.ebi-chat:not([hidden])){grid-template-columns:minmax(350px,1.05fr) minmax(320px,1fr);padding:18px}
- .ebi-chat{position:sticky;top:76px}
+ .ebi-chat{position:sticky;top:76px;height:max(650px,calc(100dvh - 96px));display:flex;flex-direction:column}
+ .ebi-chat .ebi-body{display:flex;flex-direction:column;flex:1;min-height:0}
+ .ebi-chat .ebi-log{flex:1;height:auto;min-height:120px}
+ .ebi-chat .ebi-files{max-height:140px;overflow:auto}
+ .ebi-chat:has(.ebi-connection[open]){height:auto}
  .detail:has(.ebi-chat:not([hidden]))>#map3dCard{grid-column:2}
 }
 @media(max-width:1099px){.detail{padding:12px}.ebi-chat .ebi-log{height:36dvh}.proposal-review{min-height:250px}}
