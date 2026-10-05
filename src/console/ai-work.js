@@ -3,7 +3,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const labels={queued:'작업 대기',running:'AI 분석·보정 중',awaiting_external:'에비 분석 대기 · 요청문 전달 필요',needs_info:'추가정보 필요',needs_config:'AI 연결 설정 필요',draft:'초안 생성 완료',failed:'작업 실패 · 재시도 가능',cancelled:'작업 취소'};
 const activeStatuses=['queued','running','awaiting_external'];
 const expiry=iso=>{const d=new Date(iso);return Number.isNaN(d.getTime())?'만료 시간 확인 필요':d.toLocaleString('ko-KR',{dateStyle:'short',timeStyle:'short'});};
-function dotsLinkCard(engine){
+export function dotsLinkCard(engine){
  return '<section class="dots-link" id="dotsLinkPanel" data-ai-engine="dots"'+(engine==='dots'?'':' hidden')+' aria-labelledby="dotsLinkTitle"><h4 id="dotsLinkTitle">에비 · Toolkit 연결</h4><p class="fine">연결 후 7일 동안 맡긴 작업의 사진·설명·초안에만 접근할 수 있습니다. 최종 승인 권한은 없으며 전체 승인자 세션을 공유하지 않습니다. 연결은 언제든 해제할 수 있습니다.</p>'
  +'<div id="dotsLinkStatus" class="fine" role="status">연결 상태 확인 중…</div><label><input id="dotsLinkConsent" type="checkbox"> 위 접근 범위를 확인했고 에비 연결 코드를 만들겠습니다.</label><div class="buttons"><button type="button" id="dotsLinkCreate" disabled>15분 연결 코드 만들기</button><button type="button" id="dotsLinkRevoke" disabled>에비 연결 모두 해제</button><button type="button" id="dotsLinkReload">연결 상태 새로고침</button></div>'
  +'<div id="dotsLinkCodeBox" class="dots-code" hidden><p>연결 코드는 지금 한 번만 표시됩니다. 아래 요청문을 복사해 에비 대화에 전달하세요. Toolkit 플러그인을 연결한 뒤 코드로 연결하도록 안내합니다.</p><label for="dotsLinkRequest">에비 연결 요청문</label><textarea id="dotsLinkRequest" readonly rows="5" autocomplete="off" spellcheck="false"></textarea><p id="dotsLinkExpiry" class="fine"></p><button type="button" id="dotsLinkCopy">연결 요청문 복사</button></div><p id="dotsLinkError" class="error" role="alert"></p></section>';
@@ -24,7 +24,7 @@ async function copyRequest(field,toast,error){
  error.textContent='';try{await navigator.clipboard.writeText(field.value);toast('요청문을 복사했습니다. 에비 대화에 붙여 넣어 주세요.');}
  catch{field.focus();field.select();error.textContent='복사하지 못했습니다. 위 요청문을 선택해 직접 복사해 주세요.';}
 }
-function bindDotsLink({api,toast,isCurrent},reportId){
+export function bindDotsLink({api,toast,isCurrent},reportId){
  const panel=document.querySelector('#dotsLinkPanel');if(!panel)return;
  const status=panel.querySelector('#dotsLinkStatus'),consent=panel.querySelector('#dotsLinkConsent'),create=panel.querySelector('#dotsLinkCreate'),revoke=panel.querySelector('#dotsLinkRevoke'),reload=panel.querySelector('#dotsLinkReload'),error=panel.querySelector('#dotsLinkError'),box=panel.querySelector('#dotsLinkCodeBox'),field=panel.querySelector('#dotsLinkRequest');
  let busy=false,loaded=false,links=[];

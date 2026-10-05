@@ -261,7 +261,7 @@ export async function reportsApi(request,env,ctx,{json,bytes,digest}){
    if(p==='/api/console/station'&&method==='GET'){const key=u.searchParams.get('key');if(!connectedStation(key))return json({error:'3D가 연결된 역만 볼 수 있어요.'},400);const d=await stationData(env,key);return json({slots:d.slots});}
    if(!me.approver)return needApprover();
    const dotsResponse=await dotsConsoleApi(request,env,{json,body,me,audit});if(dotsResponse)return dotsResponse;
-   const chatResponse=await chatConsoleApi(request,env,ctx,{json,body,bytes,me,audit,imageInfo});if(chatResponse)return chatResponse;
+   const chatResponse=await chatConsoleApi(request,env,ctx,{json,body,bytes,me,audit,imageInfo,stationData});if(chatResponse)return chatResponse;
    const workResponse=await aiWorkApi(request,env,ctx,{json,body,bytes,me,stationData,imageInfo,audit});if(workResponse)return workResponse;
    // Facades approved elsewhere (the retired Supabase workbench): stored like an applied proposal, idempotent per source id.
    if(p==='/api/console/import-facade'&&method==='POST'){
@@ -363,5 +363,5 @@ export async function reportsApi(request,env,ctx,{json,bytes,digest}){
    return json({error:'등록되지 않은 경로입니다.'},404);
   }
   return json({error:'등록되지 않은 경로입니다.'},404);
- }catch(e){return json({error:e.message||'요청을 처리하지 못했어요.'},400);}
+ }catch(e){return json({error:e.message||'요청을 처리하지 못했어요.'},[400,401,403,404,409,413,415,429].includes(e.status)?e.status:400);}
 }

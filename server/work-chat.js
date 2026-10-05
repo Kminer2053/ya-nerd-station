@@ -2,6 +2,8 @@
 // Only a valid paired agent can reply. Sending a message does not claim to wake Dots.
 import {decodePhoto,aiThumbnail} from './work-images.js';
 import {unzipSync} from 'fflate';
+import {removalCandidates} from './work-plan.js';
+import {metres} from '../src/reports.js';
 const parse=(s,f=null)=>{try{return s?JSON.parse(s):f;}catch{return f;}};
 const stamp=()=>new Date().toISOString();
 const isId=s=>typeof s==='string'&&/^[a-f0-9-]{36}$/.test(s);
@@ -13,7 +15,7 @@ const quota=env=>Math.max(10,Math.min(2000,Number(env.REPORT_STORAGE_MB)||500))*
 const totalSql='(SELECT COALESCE(sum(size),0) FROM report_photos)+(SELECT COALESCE(sum(size),0) FROM proposals)+(SELECT COALESCE(sum(size),0) FROM work_files)';
 const currentJob=async(db,report,actor)=>db.prepare("SELECT * FROM report_jobs WHERE report_id=? AND actor=? AND json_extract(input,'$.engine')='dots' ORDER BY created_at DESC,rowid DESC LIMIT 1").bind(report,actor).first();
 const fileRow=f=>({id:f.id,name:f.name,mime:f.mime,size:f.size,url:'/api/console/reports/'+f.report_id+'/chat/files/'+f.id});
-const jobRow=j=>j?{id:j.id,status:j.status,questions:parse(j.questions,[]),error:j.error,proposal_id:j.proposal_id}:null;
+const jobRow=j=>j?{id:j.id,kind:j.kind,status:j.status,report_version:j.report_version,questions:parse(j.questions,[]),error:j.error,proposal_id:j.proposal_id}:null;
 const lastAdmin=async(db,r,actor)=>db.prepare("SELECT id FROM work_messages WHERE report_id=? AND actor=? AND role='admin' ORDER BY rowid DESC LIMIT 1").bind(r,actor).first();
 export async function workPhotos(db,j){
  const photos=(await db.prepare('SELECT id,mime,width,height,view_role,caption FROM report_photos WHERE report_id=? ORDER BY created_at,rowid').bind(j.report_id).all()).results;
@@ -61,7 +63,7 @@ function validateFile(name,mime,data,imageInfo){
  if(['txt','md','csv','json'].includes(ext)){try{new TextDecoder('utf-8',{fatal:true}).decode(data);}catch{throw fail('텍스트 파일은 UTF-8로 저장하세요.');}if(data.includes(0)||/^\s*(?:<!doctype\s+html|<html|<svg)/i.test(sig))throw fail('실행 가능한 HTML·SVG 문서는 첨부할 수 없습니다.');if(ext==='json')try{JSON.parse(new TextDecoder().decode(data));}catch{throw fail('JSON 파일 형식을 확인하세요.');}}
  return {mime:types[ext],width:null,height:null};
 }
-export async function chatConsoleApi(request,env,ctx,{json,bytes,body,me,audit,imageInfo}){
+export async function chatConsoleApi(request,env,ctx,{json,bytes,body,me,audit,imageInfo,stationData}){
  const p=new URL(request.url).pathname,m=p.match(/^\/api\/console\/reports\/([a-f0-9-]{36})\/chat(?:\/(files)(?:\/([a-f0-9-]{36}))?)?$/);if(!m)return null;
  if(!me.approver)return json({error:'승인자 로그인이 필요해요.',login:true},401);
  const db=env.DB,r=await db.prepare('SELECT * FROM reports WHERE id=?').bind(m[1]).first();if(!r)return json({error:'제보가 없습니다.'},404);
@@ -81,10 +83,29 @@ export async function chatConsoleApi(request,env,ctx,{json,bytes,body,me,audit,i
  if(request.method!=='POST')return json({error:'지원하지 않는 대화 요청입니다.'},405);
  if(!['review','held','accepted'].includes(r.status))return json({error:'완료·반려된 제보입니다. 다시 검토한 뒤 대화를 이어가세요.'},409);
  const v=await body(),ids=v.attachment_ids||[],text=typeof v.text==='string'?v.text.trim():'';
- if(Object.keys(v).some(k=>!['request_id','text','attachment_ids'].includes(k))||!isId(v.request_id)||text.length>12000||(!text&&!ids.length)||!Array.isArray(ids)||ids.length>8||ids.some(id=>!isId(id))||new Set(ids).size!==ids.length)throw fail('메시지는 12,000자, 첨부는 한 번에 8개까지입니다.');
+ if(Object.keys(v).some(k=>!['request_id','text','attachment_ids','start','confirm','report_version'].includes(k))||!isId(v.request_id)||text.length>12000||(!text&&!ids.length)||!Array.isArray(ids)||ids.length>8||ids.some(id=>!isId(id))||new Set(ids).size!==ids.length)throw fail('메시지는 12,000자, 첨부는 한 번에 8개까지입니다.');
  for(const id of ids)if(!await db.prepare('SELECT id FROM work_files WHERE id=? AND report_id=? AND actor=?').bind(id,r.id,actor).first())throw fail('현재 제보에 올린 내 첨부파일만 보낼 수 있습니다.');
  const old=await db.prepare('SELECT * FROM work_messages WHERE id=?').bind(v.request_id).first();if(old)return old.report_id===r.id&&old.actor===actor&&old.role==='admin'&&old.text===text&&old.attachment_ids===JSON.stringify(ids)?json(await chatDetail(env,r.id,actor)):json({error:'같은 전송 ID에 다른 메시지가 들어왔습니다.'},409);
  const count=await db.prepare('SELECT count(*) AS n FROM work_messages WHERE actor=? AND created_at>?').bind(actor,new Date(Date.now()-864e5).toISOString()).first();if(count.n>=240)return json({error:'승인자별 하루 240개 메시지 한도입니다. 기존 대화를 확인하세요.'},429);
+ if(v.start===true){
+  if(v.confirm!==true||v.report_version!==r.updated_at)throw fail('대화로 작업을 맡길 범위를 확인하고 최신 제보에서 다시 보내세요.',409);
+  if(!r.floor||!parse(r.position))throw fail('제보에 층과 지도 위치가 없습니다. 먼저 위치가 있는 제보가 필요합니다.',409);
+  const link=await db.prepare('SELECT id FROM agent_links WHERE actor=? AND principal_id IS NOT NULL AND revoked_at IS NULL AND expires_at>? LIMIT 1').bind(actor,stamp()).first();
+  if(!link)throw fail('에비 연결이 없거나 만료됐습니다. 연결한 뒤 보내세요. 입력은 유지됩니다.',409);
+  const layer=parse((await db.prepare('SELECT body FROM station_layers WHERE station_key=?').bind(r.station_key).first())?.body,{assets:{},facades:{}});
+  const slots=(await stationData(env,r.station_key)).slots.filter(s=>s.floor===r.floor&&metres(s.position,parse(r.position))<=12);
+  const prior=await currentJob(db,r.id,actor),jid=crypto.randomUUID(),at=new Date(Math.max(Date.now(),Date.parse(r.updated_at)+1,Date.parse(prior?.created_at||'')+1||0)).toISOString(),context=await messagesContext(db,r.id,actor);
+  const input={engine:'dots',kind:'conversation',allowed_kinds:['facade','structure','removal'],allow_estimate:true,structure:null,alias:null,permitted_ids:removalCandidates(layer,r).slice(0,10).map(c=>c.id),facade_aliases:slots.map(s=>s.alias),parent_job_id:prior?.id||null,chat_message_id:v.request_id,chat_context:[...context.chat_context,{role:'admin',text,attachment_ids:ids}].slice(-30),chat_file_ids:[...new Set([...context.chat_file_ids,...ids])].slice(-32)};
+  const commands=[
+   db.prepare("INSERT INTO report_jobs (id,report_id,station_key,kind,status,report_version,actor,input,questions,created_at,updated_at) SELECT ?,?,?,'conversation','awaiting_external',?,?,?,'[]',?,? WHERE EXISTS (SELECT 1 FROM reports WHERE id=? AND updated_at=? AND status IN ('review','held','accepted')) AND EXISTS (SELECT 1 FROM agent_links WHERE id=? AND actor=? AND revoked_at IS NULL AND expires_at>?) AND (SELECT count(*) FROM report_jobs WHERE actor=? AND created_at>?)<240 AND NOT EXISTS (SELECT 1 FROM work_messages WHERE id=?)").bind(jid,r.id,r.station_key,at,actor,JSON.stringify(input),at,at,r.id,r.updated_at,link.id,actor,at,actor,new Date(Date.now()-864e5).toISOString(),v.request_id),
+   db.prepare("INSERT INTO work_messages (id,report_id,actor,role,job_id,text,attachment_ids,created_at) SELECT ?,?,?,'admin',?,?,?,? WHERE EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(v.request_id,r.id,actor,jid,text,JSON.stringify(ids),at,jid),
+   db.prepare("UPDATE report_jobs SET status='cancelled',updated_at=? WHERE report_id=? AND id<>? AND status IN ('queued','running','awaiting_external','needs_info','draft') AND EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(at,r.id,jid,jid),
+   db.prepare("UPDATE proposals SET status='superseded' WHERE report_ids=? AND status IN ('draft','ready') AND EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(JSON.stringify([r.id]),jid),
+   db.prepare("UPDATE reports SET status='accepted',updated_at=?,history=json_insert(history,'$[#]',json(?)) WHERE id=? AND EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(at,JSON.stringify({status:'accepted',at,note:'에비에게 사진·대화 기반 초안 작업을 맡김 · 최종 승인은 사람'}),r.id,jid)
+  ];
+  const out=await db.batch(commands);if(!out[0].meta.changes)throw fail('다른 창에서 제보가 바뀌었거나 연결·작업 한도에 도달했습니다. 다시 확인하세요.',409);
+  await audit(db,actor,'chat.start',r.id,{message:v.request_id,job:jid,scope:'conversation-draft'});return json(await chatDetail(env,r.id,actor),201);
+ }
  const previous=await currentJob(db,r.id,actor),active=previous&&previous.report_version===r.updated_at&&r.status==='accepted'&&['awaiting_external','running','needs_info','draft'].includes(previous.status),at=new Date(Math.max(Date.now(),Date.parse(previous?.created_at||'')+1||0)).toISOString(),jid=active?crypto.randomUUID():null;
  // A child keeps exactly the previously approved kind, geometry and hide allowlist.
  // Text never changes those permissions. Concurrent requests use the old job status as a claim.

@@ -89,6 +89,26 @@ try{
  await sendAdmin(unassigned.id,jarA,'아직 에비에게 맡기지 않은 메모');
  const unassignedChat=await readChat(unassigned.id,jarA);assert.equal(unassignedChat.job,null);assert(findMessage(unassignedChat,'아직 에비에게 맡기지 않은 메모'));
  assert.equal(db.prepare('SELECT count(*) AS n FROM report_jobs').get().n,originalJobs,'A chat message does not authorize a new assignment');
+ { // Chat-first consent starts a bounded Dots assignment without a kind/dimension form.
+ const conversational=seed(),request_id=crypto.randomUUID(),startBody={request_id,start:true,confirm:true,report_version:report(conversational.id).updated_at,text:'키오스크 간판과 받침을 포함해 사진으로 추정해 주세요. 뒤쪽 벽과 배너는 제외하세요.',attachment_ids:[]};
+ let started=await call(chatPath(conversational.id),{method:'POST',jar:jarA,body:{...startBody,confirm:false}});assert.equal(started.status,409);
+ started=await call(chatPath(conversational.id),{method:'POST',jar:jarA,body:startBody});assert.equal(started.status,201,await started.clone().text());
+ const conversation=await started.json(),cj=job(conversation.job.id),ci=JSON.parse(cj.input);assert.equal(cj.kind,'conversation');assert.equal(ci.engine,'dots');assert.equal(ci.allow_estimate,true);assert.equal(ci.structure,null);assert.deepEqual(ci.allowed_kinds,['facade','structure','removal']);assert(ci.facade_aliases.includes('CHAT-S01'));assert.equal(cj.report_version,report(conversational.id).updated_at);assert.equal(report(conversational.id).status,'accepted');
+ const startedCount=db.prepare('SELECT count(*) AS n FROM report_jobs').get().n;
+ started=await call(chatPath(conversational.id),{method:'POST',jar:jarA,body:startBody});assert.equal(started.status,200);assert.equal(db.prepare('SELECT count(*) AS n FROM report_jobs').get().n,startedCount);
+ const cw=data(await tool('toolkit_read_work',{job_id:cj.id}));assert.equal(cw.required_information.length,0);assert(cw.facade_candidates.some(s=>s.alias==='CHAT-S01'));assert(cw.instructions.includes('DO NOT ask the administrator to operate forms'));
+ const inferred={...plan(conversational.ids),structure:{...structure,dimension_basis:'estimated'},structure_provenance:{evidence:'사진의 간판·받침 비례를 기준으로 추정',uncertainty:'절대 척도가 없어 실측과 다를 수 있음'}};
+ denied(await tool('toolkit_submit_plan',{job_id:cj.id,plan:{...inferred,structure:{...inferred.structure,floor:'3F'}}}));
+ denied(await tool('toolkit_submit_plan',{job_id:cj.id,plan:{...inferred,kind:'facade',structure:undefined,structure_provenance:undefined,facade_alias:'OUTSIDE'}}));
+ const inferredResult=data(await tool('toolkit_submit_plan',{job_id:cj.id,plan:inferred}));assert.equal(inferredResult.status,'draft');
+ const cp=db.prepare('SELECT * FROM proposals WHERE id=?').get(inferredResult.proposal_id);assert.equal(cp.kind,'structure');assert.equal(JSON.parse(cp.meta).geometry_source,'agent-estimate');assert.equal(layer().assets?.['structure-'+cp.id],undefined,'Draft must not write the public map');
+ let approval=await call('/api/console/proposals/'+cp.id+'/approve',{method:'POST',jar:jarA,body:{confirm:true}});assert.equal(approval.status,400);
+ const confirmed={confirm:true,geometry_checked:true,privacy_checked:true,preview_checked:true,effects_checked:true};
+ approval=await call('/api/console/proposals/'+cp.id+'/approve',{method:'POST',jar:jarA,body:confirmed});assert.equal(approval.status,200,await approval.clone().text());assert(layer().assets['structure-'+cp.id]);assert.equal(JSON.parse(db.prepare('SELECT meta FROM proposals WHERE id=?').get(cp.id).meta).checks.by,'채팅 승인자');
+ approval=await call('/api/console/proposals/'+cp.id+'/approve',{method:'POST',jar:jarA,body:confirmed});assert.equal(approval.status,409,'Repeated final approval must not apply again');
+ // Restore an isolated fixture; the remaining legacy scenarios expect an empty map.
+ db.prepare('DELETE FROM station_layers WHERE station_key=?').run(station);
+ }
  denied(await tool('toolkit_read_conversation',{job_id:foreignJob.id}));
  denied(await tool('toolkit_read_conversation',{job_id:crypto.randomUUID()}));
  denied(await tool('toolkit_read_conversation',{job_id:ownJob.id},principalB,{jar:jarA}));
