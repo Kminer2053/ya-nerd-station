@@ -7,6 +7,7 @@ import {validateReportInput,validateStructure,structurePixels,validatePhotoView,
 import {analyzeWithAI} from './ai.js';
 import {DAEJEON_CANDIDATES} from '../src/daejeon-candidates.js';
 import {aiWorkApi,workDetail} from './ai-work.js';
+import {dotsConsoleApi} from './dots-auth.js';
 
 export const seoulBase=env=>env.LOCAL_PREVIEW?'http://127.0.0.1:4196':'https://station-one-collab.soalsebi.chatgpt.site';
 let seoulCache=null;
@@ -258,6 +259,7 @@ export async function reportsApi(request,env,ctx,{json,bytes,digest}){
    }
    if(p==='/api/console/station'&&method==='GET'){const key=u.searchParams.get('key');if(!connectedStation(key))return json({error:'3D가 연결된 역만 볼 수 있어요.'},400);const d=await stationData(env,key);return json({slots:d.slots});}
    if(!me.approver)return needApprover();
+   const dotsResponse=await dotsConsoleApi(request,env,{json,body,me,audit});if(dotsResponse)return dotsResponse;
    const workResponse=await aiWorkApi(request,env,ctx,{json,body,bytes,me,stationData,imageInfo,audit});if(workResponse)return workResponse;
    // Facades approved elsewhere (the retired Supabase workbench): stored like an applied proposal, idempotent per source id.
    if(p==='/api/console/import-facade'&&method==='POST'){

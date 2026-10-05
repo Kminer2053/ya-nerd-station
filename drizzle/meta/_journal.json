@@ -36,6 +36,13 @@
       "when": 1791200256057,
       "tag": "0004_stiff_scorpion",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1791211314956,
+      "tag": "0005_thick_mojo",
+      "breakpoints": true
     }
   ]
 }

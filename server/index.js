@@ -1,10 +1,12 @@
 import {validateProject,sampleProject} from '../src/model.js';
 import {saveLocked} from '../src/stations.js';
 import {reportsApi} from './reports.js';
+import {dotsMcp} from './dots-mcp.js';
 const json=(v,status=200,headers={})=>new Response(JSON.stringify(v),{status,headers:{'Content-Type':'application/json;charset=utf-8','Cache-Control':'private,no-store','X-Content-Type-Options':'nosniff',...headers}});
 const digest=async s=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)))].map(b=>b.toString(16).padStart(2,'0')).join('');
 async function bytes(req,max){if(+(req.headers.get('Content-Length')||0)>max)throw Error('파일·입력 용량 초과');const chunks=[];let size=0;for await(const c of req.body||[]){size+=c.length;if(size>max)throw Error('파일·입력 용량 초과');chunks.push(c);}const a=new Uint8Array(size);let p=0;for(const c of chunks){a.set(c,p);p+=c.length;}return a;}
 export default {async fetch(request,env,ctx){const u=new URL(request.url),p=u.pathname;
+ if(p==='/mcp')return dotsMcp(request,env,{json,bytes,digest});
  if(!p.startsWith('/api/'))return env.ASSETS.fetch(request);
  // Public reports and the ambassador console (report → AI analysis → ambassador approval).
  const reports=await reportsApi(request,env,ctx,{json,bytes,digest});if(reports)return reports;
