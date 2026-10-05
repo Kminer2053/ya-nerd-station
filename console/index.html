@@ -6,8 +6,9 @@
   <div id="stageBar" class="stage-bar" role="group" aria-label="진행 상태별 보기"></div>
   <p id="inboxCount" class="fine"></p><ul id="inboxList" class="inbox-list"></ul>
  </aside>
- <section class="detail" aria-live="polite">
-  <div id="detailBody"><div class="welcome"><h1>제보가 지금 어디까지 왔는지 보여 드려요</h1><p>왼쪽 위 단계를 눌러 검토 대기, 제안 승인 대기, 반영 대기 제보를 골라 보세요. 누구나 진행 상황과 흐린 사진을 볼 수 있고, 사진 원본 확인과 보정·승인은 승인자만 할 수 있어요.</p></div></div>
+ <section class="detail">
+  <section id="ebiChatPanel" class="card ebi-chat" aria-labelledby="ebiChatTitle" hidden></section>
+  <div id="detailBody" aria-live="polite"><div class="welcome"><h1>제보가 지금 어디까지 왔는지 보여 드려요</h1><p>왼쪽 위 단계를 눌러 검토 대기, 제안 승인 대기, 반영 대기 제보를 골라 보세요. 누구나 진행 상황과 흐린 사진을 볼 수 있고, 사진 원본 확인과 보정·승인은 승인자만 할 수 있어요.</p></div></div>
   <section id="map3dCard" class="card map3d" hidden><header><h3 id="map3dTitle">배치 미리보기</h3><p id="map3dNote" class="fine">저장되지 않는 미리보기예요.</p></header><div class="map3d-box"><div id="map"></div><p id="sceneStatus" role="status"></p><select id="floor" hidden><option>2F</option></select></div></section>
  </section>
 </main>

@@ -3,6 +3,7 @@ import {validateStructure,structurePixels,validatePhotoView,metres,stationByKey}
 import {WORK_KINDS,removalCandidates,parseWorkPlan,workPrompt} from './work-plan.js';
 import {decodePhoto,aiThumbnail,rectifyFace} from './work-images.js';
 import {requestVision} from './ai.js';
+import {workPhotos} from './work-chat.js';
 const parse=(s,f=null)=>{try{return s?JSON.parse(s):f;}catch{return f;}};
 const now=()=>new Date().toISOString();
 const storageLimit=env=>Math.max(10,Math.min(2000,Number(env.REPORT_STORAGE_MB)||500))*1_000_000;
@@ -23,11 +24,13 @@ export async function workDetail(env,report){
  const layer=await layerOf(env.DB,report.station_key);
  return {configured:configured(env),jobs:rows.map(j=>Date.now()-Date.parse(j.updated_at)>180000&&['queued','running'].includes(j.status)?jobRow({...j,status:'failed',error:'처리가 중단됐습니다. 다시 실행해 주세요.'}):jobRow(j)),candidates:removalCandidates(layer,report)};
 }
-function inputOf(v,r){
+export function inputOf(v,r){
  if(!WORK_KINDS.includes(v.kind)||v.operation_approved!==true)throw Error('작업 종류를 선택하고 작업 시작을 승인해 주세요.');
  const out={kind:v.kind,notes:String(v.notes||'').slice(0,1000),alias:typeof v.alias==='string'?v.alias:null,structure:null,permitted_ids:[]};
  if(v.engine!==undefined&&!['server','dots'].includes(v.engine))throw Error('실행 방법을 확인하세요.');
  if(v.engine==='dots')out.engine='dots';
+ if(v.allow_estimate!==undefined&&typeof v.allow_estimate!=='boolean')throw Error('추정 허용은 승인자 확인 항목으로 선택하세요.');
+ if(v.allow_estimate===true){if(v.kind!=='structure')throw Error('추정 허용은 새 구조물 작업에만 지정하세요.');out.allow_estimate=true;}
  if(v.structure&&v.kind!=='structure')throw Error('크기·배치는 새 구조물 작업에만 지정하세요.');
  if(v.structure){out.structure=validateStructure(v.structure,r.station_key);const p=parse(r.position);if(out.structure.floor!==r.floor||!p||metres(out.structure.position,p)>2)throw Error('구조물은 제보 핀과 같은 층·위치에 배치하세요.');}
  if(v.permitted_ids!==undefined){if(!Array.isArray(v.permitted_ids)||v.permitted_ids.length>10||v.permitted_ids.some(x=>!allowedKey(x)))throw Error('숨김 대상 선택을 확인하세요.');out.permitted_ids=[...new Set(v.permitted_ids)];}
@@ -43,12 +46,12 @@ export async function runWork(env,id,helpers,external=null){
  const claim=await db.prepare("UPDATE report_jobs SET status='running',updated_at=? WHERE id=? AND status=?").bind(now(),id,expected).run();if(!claim.meta.changes)return;
  const staged=[];let saved=false;
  try{
-  const r=await db.prepare('SELECT * FROM reports WHERE id=?').bind(j.report_id).first(),input=parse(j.input),photos=(await db.prepare('SELECT id,mime,width,height,view_role FROM report_photos WHERE report_id=? ORDER BY created_at,rowid').bind(j.report_id).all()).results;
+  const r=await db.prepare('SELECT * FROM reports WHERE id=?').bind(j.report_id).first(),input=parse(j.input),photos=await workPhotos(db,j);
   if(!r||r.status!=='accepted'||r.updated_at!==j.report_version)return finishJob(env,j,'cancelled',{error:'제보가 변경되어 이전 작업을 취소했습니다.'});
   const questions=[],layer=await layerOf(db,j.station_key),all=removalCandidates(layer,r),candidates=all.filter(c=>input.permitted_ids.includes(c.id));
   if(input.permitted_ids.some(id=>!all.some(c=>c.id===id)))throw Error('선택한 구조물이 변경됐거나 이 제보 위치의 대상이 아닙니다.');
   if(!photos.length)questions.push('현장 사진을 추가해 주세요.');
-  if(input.kind==='structure'&&!input.structure)questions.push('구조물의 이름, 폭·깊이·높이(m), 정면 방향과 실측/추정 여부를 입력해 주세요. 사진만으로 크기를 확정하지 않습니다.');
+  if(input.kind==='structure'&&!input.structure&&input.allow_estimate!==true)questions.push('구조물의 이름, 폭·깊이·높이(m), 정면 방향과 실측/추정 여부를 입력하거나 추정 제안을 명시적으로 허용해 주세요. 사진만으로 실제 크기를 확정하지 않습니다.');
   if(input.kind==='removal'&&!candidates.length)questions.push('숨길 독립 등록 구조물을 선택해 주세요. 원본 공유 모델·미등록 장애물은 정확한 모델 범위 확인이 필요하며 자동 제거하지 않습니다.');
   let slot=null;
   if(input.kind==='facade'){
@@ -59,26 +62,27 @@ export async function runWork(env,id,helpers,external=null){
   if(!external&&!configured(env))return finishJob(env,j,'needs_config',{error:'운영자가 AI_API_KEY·AI_PROVIDER·AI_MODEL을 비밀 설정으로 등록해야 실제 자동 작업을 실행할 수 있습니다.'});
   let raw=external?.raw;
   if(!external){const images=[];let total=0;
-   for(const p of photos){const bytes=await object(env,'report/'+p.id),src=decodePhoto(bytes,helpers.imageInfo(bytes)),thumb=aiThumbnail(src);total+=thumb.length;if(total>5_000_000)throw Error('분석 사진의 전체 용량이 큽니다. 작은 JPEG로 다시 제보해 주세요.');images.push({...p,mime:'image/png',bytes:thumb});}
+   for(const p of photos){const bytes=await object(env,p.storage_key||'report/'+p.id),src=decodePhoto(bytes,helpers.imageInfo(bytes)),thumb=aiThumbnail(src);total+=thumb.length;if(total>5_000_000)throw Error('분석 사진의 전체 용량이 큽니다. 작은 JPEG로 다시 제보해 주세요.');images.push({...p,mime:'image/png',bytes:thumb});}
    raw=await requestVision(env,{photos:images,prompt:workPrompt({report:r,input,photos,candidates,slot}),timeoutMs:20000});
   }
-  const plan=parseWorkPlan(raw,{kind:j.kind,photos,candidates,slot});
+  const plan=parseWorkPlan(raw,{kind:j.kind,photos,candidates,slot,input,report:r});
   if(plan.confidence!==null&&plan.confidence<.7&&!plan.questions.length)plan.questions.push('AI 판단이 불확실합니다. 가림 없는 사진과 대상 설명을 보완해 주세요.');
   if(plan.questions.length)return finishJob(env,j,'needs_info',{questions:plan.questions,plan});
+  const geometry=input.structure||plan.structure;
   const pid=crypto.randomUUID(),effects=[],faces={},stamp=now();let size=0;
   for(const targetId of plan.hide_ids){const asset=layer.assets[targetId];effects.push({collection:'assets',id:targetId,before:JSON.stringify(asset),after:{...asset,hidden:true},label:asset.name,action:'hide'});}
   for(const [side,f] of Object.entries(plan.faces)){
-   const p=photos.find(p=>p.id===f.photo_id),bytes=await object(env,'report/'+p.id),src=decodePhoto(bytes,helpers.imageInfo(bytes)),px=j.kind==='structure'?structurePixels(input.structure.size,side):slot.px;
+   const p=photos.find(p=>p.id===f.photo_id),bytes=await object(env,p.storage_key||'report/'+p.id),src=decodePhoto(bytes,helpers.imageInfo(bytes)),px=j.kind==='structure'?structurePixels(geometry.size,side):slot.px;
    const out=rectifyFace(src,f,px);size+=out.bytes.length;if(out.bytes.length>4_800_000||size>16_000_000)throw Error('보정 이미지 용량 초과. 수동 보정 작업대에서 JPEG로 최적화해 주세요.');
    const imageKey='proposal/'+pid+(side==='front'?'':'/'+side);staged.push(imageKey);await env.UPLOADS.put(imageKey,out.bytes,{httpMetadata:{contentType:out.mime}});
    faces[side]={photo:p.id,quad:out.quad,blurs:out.blurs,levels:true,people:true,mime:out.mime,px,privacy_reviewed:true};
   }
-  const name=input.structure?.name||slot?.name||plan.name||'승인 대상',target={name,alias:slot?.alias||'report-'+r.id,before:slot?.image||null,px:faces.front?.px||null,...(input.structure?{structure:input.structure}:{})};
-  if(j.kind==='structure'){const aid='structure-'+pid;effects.push({collection:'assets',id:aid,before:'null',after:{...input.structure,id:aid,hidden:false,facades:Object.fromEntries(Object.keys(faces).map(side=>[side,'/api/public/proposal-images/'+pid+(side==='front'?'':'/'+side)])),proposal:pid},label:name,action:'create'});}
+  const name=geometry?.name||slot?.name||plan.name||'승인 대상',target={name,alias:slot?.alias||'report-'+r.id,before:slot?.image||null,px:faces.front?.px||null,...(geometry?{structure:geometry}:{})};
+  if(j.kind==='structure'){const aid='structure-'+pid;effects.push({collection:'assets',id:aid,before:'null',after:{...geometry,id:aid,hidden:false,facades:Object.fromEntries(Object.keys(faces).map(side=>[side,'/api/public/proposal-images/'+pid+(side==='front'?'':'/'+side)])),proposal:pid},label:name,action:'create'});}
   if(j.kind==='facade'){if(!allowedKey(slot.alias))throw Error('파사드 자리 ID가 유효하지 않습니다.');effects.push({collection:'facades',id:slot.alias,before:JSON.stringify(layer.facades?.[slot.alias]??null),after:{front:'/api/public/proposal-images/'+pid,proposal:pid,at:stamp},label:name,action:'replace'});}
   if(!effectsSafe(effects))throw Error('실행할 검증 대상이 없습니다.');
   target.effects=effects;
-  const meta={by:external?'dots':'server-ai',ai_job:j.id,report_version:j.report_version,faces,summary:plan.summary,provider:external?'dots':env.AI_PROVIDER||'anthropic',model:external?null:env.AI_MODEL,checks:null,...(external?{agent_link:external.link_id}:{})};
+  const meta={by:external?'dots':'server-ai',ai_job:j.id,report_version:j.report_version,faces,summary:plan.summary,provider:external?'dots':env.AI_PROVIDER||'anthropic',model:external?null:env.AI_MODEL,checks:null,...(external?{agent_link:external.link_id}:{}),...(plan.structure?{geometry_source:'agent-estimate',allow_estimate:true,structure_provenance:plan.structure_provenance}:{})};
   // Recheck access at save time: photo processing may span revocation or expiration.
   const linked=external?" AND EXISTS (SELECT 1 FROM agent_links WHERE id=? AND principal_id=? AND actor=? AND revoked_at IS NULL AND expires_at>?)":'',linkArgs=external?[external.link_id,external.principal,j.actor,now()]:[];
   const result=await db.batch([

@@ -69,8 +69,8 @@ function assertNoPlaintextCode(code){
  const tables=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all();
  for(const {name} of tables){const rows=db.prepare('SELECT * FROM "'+name.replaceAll('"','""')+'"').all();assert(!JSON.stringify(rows).includes(code),'Connection code persisted in plaintext in '+name);}
 }
-async function createWork(report,jar,engine='dots'){
- const response=await call('/api/console/ai-work',{method:'POST',jar,body:{report_id:report.id,report_version:row(report.id).updated_at,request_id:crypto.randomUUID(),operation_approved:true,kind:'structure',structure,...(engine===null?{}:{engine})}});
+async function createWork(report,jar,engine='dots',extra={}){
+ const response=await call('/api/console/ai-work',{method:'POST',jar,body:{report_id:report.id,report_version:row(report.id).updated_at,request_id:crypto.randomUUID(),operation_approved:true,kind:'structure',structure,...(engine===null?{}:{engine}),...extra}});
  assert.equal(response.status,202,await response.clone().text());return (await response.json()).job;
 }
 
@@ -86,7 +86,7 @@ try{
  const discover=await rpc('server/discover',{supportedVersions:['2026-07-28']});
  assert.equal(discover.status,200);assert(discover.payload.result.supportedVersions.includes('2026-07-28'));
  const listed=await rpc('tools/list'),names=listed.payload.result.tools.map(item=>item.name).sort();
- assert.deepEqual(names,['toolkit_connect_agent','toolkit_connection_status','toolkit_list_work','toolkit_read_photo','toolkit_read_work','toolkit_request_info','toolkit_submit_plan'].sort());
+ assert.deepEqual(names,['toolkit_connect_agent','toolkit_connection_status','toolkit_list_work','toolkit_read_photo','toolkit_read_work','toolkit_read_conversation','toolkit_send_message','toolkit_read_file','toolkit_request_info','toolkit_submit_plan'].sort());
  assert(names.every(name=>!/(approve|ready|publish|create_work|create_queue)/.test(name)),'MCP must only expose connection/read/plan/info operations');
  denied(await tool('toolkit_list_work',{},undefined));
  denied(await rpc('tools/call',{name:'toolkit_connection_status',arguments:{}},{extra:{'oai-authenticated-user-email':'sites-test-dot-a@example.test'}}));
@@ -154,6 +154,23 @@ try{
  assert.equal(proposalCount(own.id),1);assert.deepEqual(layer(),{});
  for(const name of ['toolkit_approve','toolkit_ready','toolkit_create_work'])denied(await tool(name,{job_id:ownJob.id}));
 
+ // Dots may propose geometry only after a human grants the narrow estimate opt-in.
+ const estimated=seed(),estimateJob=await createWork(estimated,jarA,'dots',{structure:null,allow_estimate:true}),estimatedGeometry={...structure,dimension_basis:'estimated'},estimateBasis={evidence:'사진의 문과 옆 구조물을 비교한 치수·방향 제안',uncertainty:'원근 때문에 오차가 있으며 실제 치수와 방향 확인 필요'},estimatePlan={...plan(estimated.ids),structure:estimatedGeometry,structure_provenance:estimateBasis};
+ assert.deepEqual(data(await tool('toolkit_read_work',{job_id:estimateJob.id})).required_information,[]);
+ denied(await tool('toolkit_submit_plan',{job_id:estimateJob.id,plan:{...estimatePlan,structure:{...estimatedGeometry,position:[position[0]+.001,position[1],position[2]]}}}));
+ denied(await tool('toolkit_submit_plan',{job_id:estimateJob.id,plan:{...estimatePlan,structure_provenance:{evidence:'',uncertainty:'확인 필요'}}}));
+ assert.equal(proposalCount(estimated.id),0);
+ data(await tool('toolkit_submit_plan',{job_id:estimateJob.id,plan:estimatePlan}));
+ const estimateDraft=job(estimateJob.id),estimateProposal=db.prepare('SELECT * FROM proposals WHERE id=?').get(estimateDraft.proposal_id),estimateMeta=JSON.parse(estimateProposal.meta);
+ assert.equal(estimateDraft.status,'draft');assert.deepEqual(JSON.parse(estimateProposal.target).structure,estimatedGeometry);
+ assert.equal(estimateMeta.geometry_source,'agent-estimate');assert.equal(estimateMeta.allow_estimate,true);assert.deepEqual(estimateMeta.structure_provenance,estimateBasis);
+ data(await tool('toolkit_submit_plan',{job_id:estimateJob.id,plan:estimatePlan}));assert.equal(proposalCount(estimated.id),1);
+ const notAllowed=seed(),notAllowedJob=await createWork(notAllowed,jarA,'dots',{structure:null});
+ denied(await tool('toolkit_submit_plan',{job_id:notAllowedJob.id,plan:{...plan(notAllowed.ids),structure:estimatedGeometry,structure_provenance:estimateBasis}}));assert.equal(proposalCount(notAllowed.id),0);
+ denied(await tool('toolkit_submit_plan',{job_id:ownJob.id,plan:{...valid,structure:estimatedGeometry,structure_provenance:estimateBasis}}));
+ assert.equal(JSON.parse(db.prepare('SELECT target FROM proposals WHERE id=?').get(pid).target).structure.dimension_basis,'measured');assert.deepEqual(layer(),{});
+ assert.equal((await call('/api/public/proposal-images/'+estimateDraft.proposal_id)).status,404);
+
  // Additional questions are recorded privately; no draft or public effect is produced.
  const info=seed(),infoJob=await createWork(info,jarA),questions=['간판부터 바닥까지 정면 전체가 보이는 사진을 추가해 주세요.'];
  data(await tool('toolkit_request_info',{job_id:infoJob.id,questions}));
@@ -194,7 +211,7 @@ try{
  clock+=8*864e5;
  const expiredGrant=await tool('toolkit_list_work',{},principalB);assert([401,403].includes(expiredGrant.status),'Seven-day grant expires without a new link');
  assert.deepEqual(layer(),{});assert.equal(networkAttempts,0,'No real external network or AI call is allowed');
- console.log('PASS: Dots MCP discovery; one-time hashed/expired identity binding; actor and engine isolation; bounded original-photo analysis; validated private immutable drafts; idempotent retry/conflict; info/source/cancel invalidation; immediate revocation and seven-day/in-flight expiration with staged image cleanup');
+ console.log('PASS: Dots MCP discovery; one-time hashed/expired identity binding; actor and engine isolation; bounded original-photo analysis; explicit estimate opt-in/bounds/provenance/manual geometry protection; validated private immutable drafts; idempotent retry/conflict; info/source/cancel invalidation; immediate revocation and seven-day/in-flight expiration with staged image cleanup');
 }finally{
  globalThis.Date=nativeDate;globalThis.fetch=nativeFetch;db.close();
 }

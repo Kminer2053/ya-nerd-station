@@ -8,6 +8,7 @@ import {progressLine,stagePill} from '../progress.js';
 import {warp,autoLevels,pixelate,defaultQuad,mapBox} from '../rectify.js';
 import {createScene} from '../scene.js';
 import {workCard,bindWork,stopWorkPoll} from './ai-work.js';
+import {createEbiChat} from './ebi-chat.js';
 
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const tone={received:'mute',analyzing:'mute',review:'info',queued:'lime',applied:'ok',held:'warn',duplicate:'mute',rejected:'warn'};
@@ -20,11 +21,14 @@ function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('on');clea
 async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{...(typeof opts.body==='string'?{'Content-Type':'application/json'}:{}),...opts.headers}});const v=await r.json().catch(()=>({}));
  if(r.status===401&&v.login){session.approver=null;renderWho();openLogin();}
  if(!r.ok)throw Object.assign(Error(v.error||'요청을 처리하지 못했어요.'),{status:r.status,body:v});return v;}
+const ebiChat=createEbiChat({api,toast,onOpenWork:()=>$('.ai-work')?.scrollIntoView({behavior:'smooth',block:'start'}),onOpenDraft:async({reportId,proposalId})=>{if(detail?.report.id!==reportId)return;await openReport(reportId);if(detail?.report.id!==reportId)return;const proposal=[...document.querySelectorAll('[data-proposal]')].find(el=>el.dataset.proposal===proposalId);(proposal||$('#proposalList'))?.scrollIntoView({behavior:'smooth',block:'start'});}});
+ebiChat.mount($('#ebiChatPanel'));
+addEventListener('pagehide',()=>ebiChat.clear());
 function syncUrl(){const q=new URLSearchParams();if($('#fStation').value)q.set('station',$('#fStation').value);q.set('stage',stage);if(detail)q.set('report',detail.report.id);history.replaceState(null,'','?'+q);}
 
 // ---- Approver session (name + password → HttpOnly session cookie)
 async function loadSession(){session=await api('/api/session').catch(()=>({approver:null}));renderWho();}
-function renderWho(){const a=session.approver;$('#who').hidden=!a;$('#who').textContent=a?'승인자 '+a:'';$('#loginBtn').hidden=Boolean(a);$('#logoutBtn').hidden=!a;}
+function renderWho(){const a=session.approver;$('#who').hidden=!a;$('#who').textContent=a?'승인자 '+a:'';$('#loginBtn').hidden=Boolean(a);$('#logoutBtn').hidden=!a;ebiChat.report(detail,a);}
 function openLogin(){if($('#loginDialog').open)return;$('#loginError').textContent=session.approvers_configured===false?'승인자 계정이 아직 설정되지 않았어요. 운영자에게 문의하세요.':'';$('#loginDialog').showModal();$('#loginName').focus();}
 $('#loginBtn').onclick=openLogin;$('#loginCancel').onclick=()=>$('#loginDialog').close();
 $('#loginForm').addEventListener('submit',async e=>{e.preventDefault();$('#loginError').textContent='';const btn=$('#loginSubmit');btn.disabled=true;
@@ -83,6 +87,7 @@ async function openReport(id){
  bench=null;syncUrl();
  for(const b of document.querySelectorAll('[data-report]'))b.classList.toggle('on',b.dataset.report===id);
  const r=detail.report,a=r.analysis,approver=Boolean(session.approver);
+ ebiChat.report(detail,session.approver);
  $('#detailBody').innerHTML='<header class="d-head"><div>'+stagePill(r)+' <b>'+esc(r.type_label)+'</b> · '+esc(r.station_name)+(r.floor?' · '+esc(r.floor):'')+' · '+ago(r.created_at)+(r.user?' · 로그인 제보자':' · 비로그인 제보자')+'</div>'+(a?.confidence!=null?'<div class="confbar" style="--c:'+a.confidence+'"><span>신뢰 '+a.confidence.toFixed(2)+'</span><i></i></div>':'')+'</header>'
   +'<section class="card progress-card">'+progressLine(r)+(r.reason?'<p class="note-reason">승인자 메모 · '+esc(r.reason)+'</p>':'')+'</section>'
   +adoptionCard(r)+contentCard(r)+(a?analysisCard(r):'')+workCard(detail)
@@ -106,7 +111,7 @@ $('#detailBody').addEventListener('click',e=>{const b=e.target.closest('[data-ph
  if(bench&&bench.photo!==i)selectBenchPhoto(i).catch(e=>toast(e.message));});
 function renderProposals(){
  const ps=detail.proposals,approver=Boolean(session.approver);
- $('#proposalList').innerHTML=ps.length?ps.map(p=>'<article class="proposal"><figure>'+(p.target.before?'<img src="'+esc(p.target.before)+'" alt="지금 지도">':'<span class="pending">'+(p.kind==='structure'?'새 구조물 · 아직 지도에 없음':p.kind==='removal'?'독립 등록된 구조물':'VWorld 원본 텍스처')+'</span>')+'<figcaption>변경 전</figcaption></figure><span aria-hidden="true">→</span><figure>'+(p.image?'<img src="'+esc(p.image)+'" alt="제안 이미지">':'<span class="pending">'+(p.kind==='removal'?'승인 후 숨김 · 원본 보존':'승인자 확인 중')+'</span>')+'<figcaption>제안 '+esc((p.target.px||[]).join('×'))+'</figcaption></figure>'
+ $('#proposalList').innerHTML=ps.length?ps.map(p=>'<article class="proposal" data-proposal="'+esc(p.id)+'"><figure>'+(p.target.before?'<img src="'+esc(p.target.before)+'" alt="지금 지도">':'<span class="pending">'+(p.kind==='structure'?'새 구조물 · 아직 지도에 없음':p.kind==='removal'?'독립 등록된 구조물':'VWorld 원본 텍스처')+'</span>')+'<figcaption>변경 전</figcaption></figure><span aria-hidden="true">→</span><figure>'+(p.image?'<img src="'+esc(p.image)+'" alt="제안 이미지">':'<span class="pending">'+(p.kind==='removal'?'승인 후 숨김 · 원본 보존':'승인자 확인 중')+'</span>')+'<figcaption>제안 '+esc((p.target.px||[]).join('×'))+'</figcaption></figure>'
   +'<div><b>'+esc(p.target.name)+({structure:' · 새 구조물',removal:' · 장애물 숨김',facade:' · 파사드 교체'}[p.kind]||'')+'</b><span class="pill '+(p.status==='ready'?'info':tone[p.status]||'mute')+'">'+esc(STATUS[p.status]||p.status)+'</span>'+(p.reviewer?'<span class="fine">'+esc(p.reviewer)+'</span>':'')+(p.reason?'<p class="fine">'+esc(p.reason)+'</p>':'')+'</div>'
   +(p.meta?.ai_job?'<section class="ai-effects"><b>AI 초안의 실제 변경 대상</b><p>'+esc(p.meta.summary)+'</p><ul>'+(p.target.effects||[]).map(e=>{const before=e.action==='hide'?JSON.parse(e.before):null;return '<li><strong>'+({hide:'숨김',create:'생성',replace:'파사드 교체'}[e.action]||'변경')+'</strong> · '+esc(e.label)+' <small>'+esc(e.id)+'</small>'+(before?'<br>'+esc(before.floor)+' · '+esc(before.position?.join(', '))+' · '+esc(before.size?.join('×'))+'m'+modelMarkup(before,before.facades||{})+'현재: 표시 → 승인 후: 숨김 · 원본과 복원 정보 보존':'')+'</li>';}).join('')+'</ul><p class="fine">원본 공유 모델은 자동 제거하지 않습니다. 사진에서 가려진 모양이나 면은 AI로 임의 생성하지 않습니다.</p></section>':'')
   +(p.kind==='structure'&&p.image?'<section class="saved-model">'+modelMarkup(p.target.structure,p.images||p.image)+'<div class="face-results">'+Object.entries(p.images||{front:p.image}).map(([side,url])=>'<figure><img src="'+esc(url)+'" alt="보정한 '+esc(photoViewLabel(side))+'"><figcaption>'+esc(photoViewLabel(side))+'</figcaption></figure>').join('')+'</div><p class="fine">'+esc(p.target.structure.floor)+' · '+esc(p.target.structure.position.join(', '))+' · '+p.target.structure.heading+'°<br>크기 근거: '+(p.target.structure.dimension_basis==='measured'?'실측 / 도면 확인':'사진 참고 추정 · 현장 확인 필요')+'</p></section>':'')

@@ -9,6 +9,8 @@ import {validQuad,validBox,parseWorkPlan,removalCandidates} from '../server/work
 import {decodePhoto,rectifyFace} from '../server/work-images.js';
 import {imageInfo} from '../server/reports.js';
 import {warp} from '../src/rectify.js';
+import {inputOf} from '../server/ai-work.js';
+import {workCard} from '../src/console/ai-work.js';
 const db=new DatabaseSync(':memory:');for(const f of readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort())db.exec(readFileSync('drizzle/'+f,'utf8'));
 const files=new Map(),env={DB:d1Adapter(db),APPROVERS:'검증 승인자:test-password-8',UPLOADS:{async put(k,b){files.set(k,b);},async delete(k){files.delete(k);},async get(k){return files.has(k)?{body:files.get(k)}:null;}},AI_PROVIDER:'anthropic',AI_MODEL:'test-vision'};
 const key='S202103',pos=[126.9706,37.5539,36.2],front=crypto.randomUUID(),left=crypto.randomUUID(),pixel=new Uint8Array(32*24*4);
@@ -38,6 +40,29 @@ assert.throws(()=>parseWorkPlan(JSON.stringify({...base,hide_ids:['foreign-model
 assert.throws(()=>parseWorkPlan(JSON.stringify({...base,faces:[{...face(front),privacy_reviewed:false}]}),{kind:'structure',photos:phs,candidates:[],slot:null}),/개인정보/);
 assert.throws(()=>parseWorkPlan(JSON.stringify({...base,faces:[face('foreign-photo')]}),{kind:'structure',photos:phs,candidates:[],slot:null}),/소유권/);
 assert.throws(()=>parseWorkPlan(JSON.stringify({...base,kind:'removal'}),{kind:'structure',photos:phs,candidates:[],slot:null}),/종류/);
+// Estimates require human opt-in, evidence and uncertainty, and cannot replace manual geometry.
+const estimate={...structure,dimension_basis:'estimated'},provenance={evidence:'정면 사진의 표준 문 폭과 주변 키오스크를 비교한 추정',uncertainty:'사진 원근 때문에 폭·깊이 오차가 있으며 현장 치수 확인 필요'},estimateReport={station_key:key,floor:'2F',position:JSON.stringify(pos)};
+const estimateContext={kind:'structure',photos:phs,candidates:[],slot:null,input:{kind:'structure',allow_estimate:true,structure:null},report:estimateReport},estimatedPlan={...base,structure:estimate,structure_provenance:provenance};
+assert.deepEqual(parseWorkPlan(JSON.stringify(estimatedPlan),estimateContext).structure,estimate);
+assert.deepEqual(parseWorkPlan(JSON.stringify(estimatedPlan),estimateContext).structure_provenance,provenance);
+assert.throws(()=>parseWorkPlan(JSON.stringify(estimatedPlan),{...estimateContext,input:{kind:'structure'}}),/추정/);
+assert.throws(()=>parseWorkPlan(JSON.stringify(estimatedPlan),{...estimateContext,input:{kind:'structure',allow_estimate:true,structure}}),/수동/);
+for(const badGeometry of [{floor:'1F'},{position:[pos[0]+.001,pos[1],pos[2]]},{size:[.09,.6,2]},{size:[31,.6,2]},{heading:null},{dimension_basis:'measured'}])assert.throws(()=>parseWorkPlan(JSON.stringify({...estimatedPlan,structure:{...estimate,...badGeometry}}),estimateContext));
+assert.throws(()=>parseWorkPlan(JSON.stringify({...estimatedPlan,structure_provenance:{evidence:'',uncertainty:'확인 필요'}}),estimateContext),/근거/);
+assert.throws(()=>parseWorkPlan(JSON.stringify({...estimatedPlan,structure_provenance:undefined}),estimateContext),/근거/);
+assert.throws(()=>parseWorkPlan(JSON.stringify({...estimatedPlan,floor_decal:{}}),estimateContext),/데칼/);
+assert.throws(()=>inputOf({kind:'structure',operation_approved:false,allow_estimate:true},estimateReport),/승인/);
+assert.throws(()=>inputOf({kind:'facade',operation_approved:true,allow_estimate:true},estimateReport),/구조물/);
+assert.throws(()=>inputOf({kind:'structure',operation_approved:true,allow_estimate:'true'},estimateReport),/확인/);
+assert.equal(inputOf({kind:'structure',operation_approved:true,allow_estimate:true},estimateReport).allow_estimate,true);
+assert(!('allow_estimate' in inputOf({kind:'structure',operation_approved:true},estimateReport)));
+assert(parseWorkPlan(JSON.stringify(base),estimateContext).questions.some(q=>q.includes('추정 근거')),'An opt-in alone does not invent geometry');
+const estimateCard=(input={},plan=null)=>workCard({report:{id:'test-report',status:'accepted',type:'new',photos:[]},work:{configured:true,candidates:[],jobs:[{id:'test-job',status:'draft',input,plan}]}});
+assert.match(estimateCard(),/name="allow_estimate">/,'Estimate permission is not checked by default');
+assert.match(estimateCard({allow_estimate:true}),/name="allow_estimate" checked/);
+assert.match(estimateCard(),/바닥 안내 데칼은 아직 지원하지 않습니다/);
+const provenanceCard=estimateCard({allow_estimate:true},{structure_provenance:{evidence:'<img src=x onerror=alert(1)>',uncertainty:'현장 확인 필요'}});
+assert(provenanceCard.includes('&lt;img src=x onerror=alert(1)&gt;'));assert(!provenanceCard.includes('<img src=x'));
 const src=decodePhoto(photo,imageInfo(photo)),out=rectifyFace(src,{quad:q,people:[[.3,.2,.2,.4]]},[64,32]);assert.equal(decode(out.bytes).width,64);assert.equal(decode(out.bytes).height,32);
 const jpg=jpeg.encode({width:32,height:24,data:pixel},80).data;assert.equal(decodePhoto(jpg,imageInfo(jpg)).width,32);
 assert.throws(()=>decodePhoto(photo,{mime:'image/png',width:10000,height:10000}),/2048/);
@@ -52,7 +77,28 @@ let r=seed();assert.equal((await call('/api/console/ai-work',{method:'POST',body
 assert.equal((await call('/api/console/ai-work',{method:'POST',body:start(r.id,{operation_approved:false})})).status,400);
 res=await call('/api/console/ai-work',{method:'POST',body:start(r.id)});let j=(await res.json()).job;assert.equal(j.status,'needs_info');assert(j.questions.some(q=>q.includes('크기')));assert.equal(aiCalls,0);assert(!db.prepare('SELECT count(*) n FROM proposals').get().n);
 res=await call('/api/console/ai-work',{method:'POST',body:start(r.id,{structure})});j=(await res.json()).job;assert.equal(j.status,'needs_config');assert.equal(aiCalls,0);
-env.AI_API_KEY='test-only';reply=plan(r.ids);const input=start(r.id,{structure});res=await call('/api/console/ai-work',{method:'POST',body:input});j=(await res.json()).job;assert.equal(j.status,'draft',j.error);assert(j.proposal_id);assert.equal(row(r.id).status,'accepted');assert.deepEqual(layer(),{});
+env.AI_API_KEY='test-only';
+{
+ const acceptedEstimate=seed();reply={...plan(acceptedEstimate.ids),structure:estimate,structure_provenance:provenance};
+ let response=await call('/api/console/ai-work',{method:'POST',body:start(acceptedEstimate.id,{allow_estimate:true})}),estimatedJob=(await response.json()).job;
+ assert.equal(estimatedJob.status,'draft',estimatedJob.error);const pr=db.prepare('SELECT * FROM proposals WHERE id=?').get(estimatedJob.proposal_id),target=JSON.parse(pr.target),meta=JSON.parse(pr.meta);
+ assert.deepEqual(target.structure,estimate);assert.equal(target.structure.dimension_basis,'estimated');assert.equal(meta.geometry_source,'agent-estimate');assert.equal(meta.allow_estimate,true);assert.deepEqual(meta.structure_provenance,provenance);
+ assert.equal(JSON.parse(db.prepare('SELECT input FROM report_jobs WHERE id=?').get(estimatedJob.id).input).structure,null,'Estimate never becomes a manual approval');
+ assert.equal((await call('/api/public/proposal-images/'+pr.id,{jar:''})).status,404);assert.deepEqual(layer(),{});
+ const missingConsent=seed(),callsBefore=aiCalls;reply={...plan(missingConsent.ids),structure:estimate,structure_provenance:provenance};
+ estimatedJob=(await (await call('/api/console/ai-work',{method:'POST',body:start(missingConsent.id)})).json()).job;
+ assert.equal(estimatedJob.status,'needs_info');assert.equal(aiCalls,callsBefore,'No opt-in means no geometry estimate call');
+ const manual=seed();reply={...plan(manual.ids),structure:estimate,structure_provenance:provenance};
+ estimatedJob=(await (await call('/api/console/ai-work',{method:'POST',body:start(manual.id,{structure,allow_estimate:true})})).json()).job;
+ assert.equal(estimatedJob.status,'failed');assert.match(estimatedJob.error,/수동/);assert.equal(estimatedJob.proposal_id,null);
+ const noBasis=seed();reply={...plan(noBasis.ids),structure:estimate};
+ estimatedJob=(await (await call('/api/console/ai-work',{method:'POST',body:start(noBasis.id,{allow_estimate:true})})).json()).job;
+ assert.equal(estimatedJob.status,'failed');assert.match(estimatedJob.error,/근거/);assert.equal(estimatedJob.proposal_id,null);
+ const far=seed();reply={...plan(far.ids),structure:{...estimate,position:[pos[0]+.001,pos[1],pos[2]]},structure_provenance:provenance};
+ estimatedJob=(await (await call('/api/console/ai-work',{method:'POST',body:start(far.id,{allow_estimate:true})})).json()).job;
+ assert.equal(estimatedJob.status,'failed');assert.match(estimatedJob.error,/2m/);assert.equal(estimatedJob.proposal_id,null);assert.deepEqual(layer(),{});
+}
+reply=plan(r.ids);const input=start(r.id,{structure});res=await call('/api/console/ai-work',{method:'POST',body:input});j=(await res.json()).job;assert.equal(j.status,'draft',j.error);assert(j.proposal_id);assert.equal(row(r.id).status,'accepted');assert.deepEqual(layer(),{});
 const calls=aiCalls;assert.equal((await call('/api/console/ai-work',{method:'POST',body:input})).status,202);assert.equal(aiCalls,calls,'replay does not rebill');
 const pid=j.proposal_id,detail=await (await call('/api/console/reports/'+r.id)).json();assert.equal(detail.proposals[0].meta.by,'server-ai');assert.equal(Object.keys(detail.proposals[0].images).length,2);assert.equal((await call('/api/public/proposal-images/'+pid,{jar:''})).status,404);
 assert.equal((await (await call('/api/console/reports/'+r.id,{jar:''})).json()).work,null,'no job/input/plan for public readers');
@@ -80,4 +126,4 @@ const cancelSeed=seed(),background=[];let release;const paused=new Promise(resol
 const beforeVersion=row(extra.id).updated_at;res=await server.fetch(new Request('http://test.local/api/console/reports/'+extra.id+'/photos',{method:'POST',headers:{Origin:'http://test.local',Cookie:cookie,'Content-Type':'image/png','X-Report-Version':beforeVersion,'X-Photo-View':'context'},body:photo}),env);assert.equal(res.status,201,await res.clone().text());assert.notEqual(row(extra.id).updated_at,beforeVersion);assert.equal(db.prepare('SELECT status FROM proposals WHERE report_ids=? ORDER BY created_at DESC LIMIT 1').get(JSON.stringify([extra.id])).status,'superseded');
 assert.deepEqual(removalCandidates({assets:{native:{id:'native',floor:'2F',position:pos},far:{...independent,position:[127,38,36]},wrong:{...independent,floor:'3F'}}},row(extra.id)),[]);
 assert.deepEqual(removalCandidates({assets:{[aid]:{...layer().assets[aid],source_id:'shared-TD_ID'}}},row(extra.id)),[]);
-console.log('PASS: real PNG/JPEG decode + rectification/privacy; operation authorization, needs-info/config, durable jobs, immutable private drafts, idempotency, facade/structure/removal final approvals, stale target/source/late-result rejection and scoped restoration');
+console.log('PASS: real PNG/JPEG decode + rectification/privacy; explicit estimate opt-in/bounds/provenance/manual geometry protection; operation authorization, needs-info/config, durable jobs, immutable private drafts, idempotency, facade/structure/removal final approvals, stale target/source/late-result rejection and scoped restoration');

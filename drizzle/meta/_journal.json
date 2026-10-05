@@ -43,6 +43,13 @@
       "when": 1791211314956,
       "tag": "0005_thick_mojo",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1791214937559,
+      "tag": "0006_new_nighthawk",
+      "breakpoints": true
     }
   ]
 }
