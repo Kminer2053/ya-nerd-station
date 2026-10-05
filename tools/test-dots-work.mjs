@@ -10,11 +10,11 @@ import {d1Adapter} from './sqlite-adapter.mjs';
 const db=new DatabaseSync(':memory:');
 for(const file of readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort())db.exec(readFileSync('drizzle/'+file,'utf8'));
 const files=new Map(),env={DB:d1Adapter(db),APPROVERS:'검증 승인자:test-password-8,별도 승인자:second-password-8',UPLOADS:{
- async put(key,body){files.set(key,body);},async delete(key){files.delete(key);},async get(key){return files.has(key)?{body:files.get(key)}:null;}
+ async put(key,body){files.set(key,body);if(putHook)await putHook(key);},async delete(key){files.delete(key);},async get(key){return files.has(key)?{body:files.get(key)}:null;}
 }};
 const station='S202103',position=[126.9706,37.5539,36.2],principalA='sites-test-dot-a',principalB='sites-test-dot-b';
 const nativeDate=globalThis.Date,nativeFetch=globalThis.fetch;
-let clock=nativeDate.now(),networkAttempts=0,rpcId=0;
+let clock=nativeDate.now(),networkAttempts=0,rpcId=0,putHook=null;
 globalThis.Date=class extends nativeDate{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}};
 globalThis.fetch=async url=>{
  const path=String(url);
@@ -101,7 +101,7 @@ try{
  data(await tool('toolkit_connect_agent',{code:linkA.code},principalA));
  denied(await tool('toolkit_connect_agent',{code:linkA.code},principalB));
  data(await tool('toolkit_connect_agent',{code:linkA.code},principalA)); // Same-principal retry preserves the existing binding.
- const linkB=await issue(jarB,principalB);data(await tool('toolkit_connect_agent',{code:linkB.code},principalB));
+ const linkB=await issue(jarB,principalB),connectedB=data(await tool('toolkit_connect_agent',{code:linkB.code},principalB));
  const metadata=await (await call('/api/console/dots-link',{jar:jarA})).json();
  assert(!JSON.stringify(metadata).includes(linkA.code));assert(!JSON.stringify(metadata).includes(principalB),'Another actor connection is private');
  assertNoPlaintextCode(linkA.code);assertNoPlaintextCode(linkB.code);
@@ -180,10 +180,21 @@ try{
  denied(await tool('toolkit_read_photo',{job_id:ownJob.id,photo_id:own.ids[0]}));
  denied(await tool('toolkit_connect_agent',{code:linkA.code}));
  const remaining=listRows(data(await tool('toolkit_list_work',{},principalB)));assert(remaining.some(item=>item.job_id===foreignJob.id));
+ // A valid request that expires while R2 writes a rectified image must not save a draft.
+ const midflight=seed(),midflightJob=await createWork(midflight,jarB),originalObjectCount=files.size,grantExpiry=Date.parse(connectedB.expires_at);
+ assert(Number.isFinite(grantExpiry));clock=grantExpiry-1;
+ let expiryTriggered=false;
+ putHook=key=>{if(key.startsWith('proposal/')){expiryTriggered=true;clock=grantExpiry+1;putHook=null;}};
+ const expiredInFlight=data(await tool('toolkit_submit_plan',{job_id:midflightJob.id,plan:plan(midflight.ids)},principalB));
+ assert(expiryTriggered,'The grant must expire during a real rectified image write');
+ assert.equal(expiredInFlight.status,'cancelled');assert.equal(job(midflightJob.id).status,'cancelled');
+ assert.equal(job(midflightJob.id).proposal_id,null);assert.equal(proposalCount(midflight.id),0);
+ assert.equal(files.size,originalObjectCount,'Rectified images staged before expiration must be removed');
+ assert.deepEqual(layer(),{});
  clock+=8*864e5;
  const expiredGrant=await tool('toolkit_list_work',{},principalB);assert([401,403].includes(expiredGrant.status),'Seven-day grant expires without a new link');
  assert.deepEqual(layer(),{});assert.equal(networkAttempts,0,'No real external network or AI call is allowed');
- console.log('PASS: Dots MCP discovery; one-time hashed/expired identity binding; actor and engine isolation; bounded original-photo analysis; validated private immutable drafts; idempotent retry/conflict; info/source/cancel invalidation; immediate revocation and seven-day expiration');
+ console.log('PASS: Dots MCP discovery; one-time hashed/expired identity binding; actor and engine isolation; bounded original-photo analysis; validated private immutable drafts; idempotent retry/conflict; info/source/cancel invalidation; immediate revocation and seven-day/in-flight expiration with staged image cleanup');
 }finally{
  globalThis.Date=nativeDate;globalThis.fetch=nativeFetch;db.close();
 }

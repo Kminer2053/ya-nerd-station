@@ -36,6 +36,8 @@ Sites가 인증한 사용자 ID로 계정을 확인하고, D1의 `agent_links`�
 
 - `npm test`, `npm run test:reports`, `npm run test:ai-work`, `npm run test:dots-work`, `npm run build`, `git diff --check`.
 - 메모리 D1/R2와 실제 PNG를 사용해 코드 해시·15분 만료·계정/승인자 격리·서버 AI 작업 차단·640px 이미지·계획 검증·비공개 초안·재전송/충돌·추가정보·사진 변경/취소·권한 철회·7일 만료를 검증한다. 외부 모델 호출은 하지 않는다.
+- 사진 처리 도중 연결이 만료되어도 저장 직전 권한을 재검사해 초안을 취소하고 임시 보정 이미지를 정리한다. 이 경계도 회귀시험으로 검증한다.
+- 플러그인 도구 주소는 Sites가 제공한 `https://ya-nerd-station.soalsebi.chatgpt.site/mcp`를 사용한다. 운영 배포에서 인증 없는 요청은 Sites 인증 경계에서 401로 차단되며, 커스텀 도메인의 `/mcp`를 별도 등록하지 않는다.
 - 운영 중인 실제 제보를 채택·승인·반려하거나 사진을 에비에게 보내는 검증은 하지 않는다. 실제 에비 로그인·플러그인 연결·초안 전용 계정 연결 후 비파괴 확인이 별도로 필요하다.
 - `drizzle/0005_thick_mojo.sql`은 새 `agent_links` 테이블과 인덱스만 추가한다. 기존 테이블·사진·승인 레이어는 유지한다.
 - 공개 Toolkit 소스와 private service/toolkit 미러에 함께 커밋한다. Toolkit만 공식 Sites workflow로 저장·배포하며 서비스 런타임은 바꾸지 않는다.

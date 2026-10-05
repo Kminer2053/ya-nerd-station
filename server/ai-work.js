@@ -79,8 +79,8 @@ export async function runWork(env,id,helpers,external=null){
   if(!effectsSafe(effects))throw Error('실행할 검증 대상이 없습니다.');
   target.effects=effects;
   const meta={by:external?'dots':'server-ai',ai_job:j.id,report_version:j.report_version,faces,summary:plan.summary,provider:external?'dots':env.AI_PROVIDER||'anthropic',model:external?null:env.AI_MODEL,checks:null,...(external?{agent_link:external.link_id}:{})};
-  // A revocation while photo processing is in flight must prevent even a private draft.
-  const linked=external?" AND EXISTS (SELECT 1 FROM agent_links WHERE id=? AND principal_id=? AND actor=? AND revoked_at IS NULL AND expires_at>?)":'',linkArgs=external?[external.link_id,external.principal,j.actor,stamp]:[];
+  // Recheck access at save time: photo processing may span revocation or expiration.
+  const linked=external?" AND EXISTS (SELECT 1 FROM agent_links WHERE id=? AND principal_id=? AND actor=? AND revoked_at IS NULL AND expires_at>?)":'',linkArgs=external?[external.link_id,external.principal,j.actor,now()]:[];
   const result=await db.batch([
    db.prepare("INSERT INTO proposals (id,station_key,report_ids,kind,target,meta,mime,size,confidence,status,reviewer,created_at) SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM report_jobs WHERE id=? AND status='running') AND EXISTS (SELECT 1 FROM reports WHERE id=? AND status='accepted' AND updated_at=?) AND (SELECT COALESCE(sum(size),0) FROM report_photos)+(SELECT COALESCE(sum(size),0) FROM proposals)+?<=?"+linked).bind(pid,j.station_key,JSON.stringify([r.id]),j.kind,JSON.stringify(target),JSON.stringify(meta),faces.front?.mime||null,size,plan.confidence,'draft',j.actor,stamp,j.id,r.id,j.report_version,size,storageLimit(env),...linkArgs),
    db.prepare("UPDATE proposals SET status='superseded' WHERE report_ids=? AND id<>? AND status IN ('draft','ready') AND EXISTS (SELECT 1 FROM proposals WHERE id=?)").bind(JSON.stringify([r.id]),pid,pid),
