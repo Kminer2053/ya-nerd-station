@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync,readdirSync} from 'node:fs';
 import server from '../server/index.js';
-import {validateReportInput,validateStructure,structurePixels,nearest,ruleConfidence,PUBLIC_STATIONS,progressOf} from '../src/reports.js';
+import {validateReportInput,validateStructure,structurePixels,validatePhotoView,photoCoverage,preferredPhoto,STRUCTURE_FACES,nearest,ruleConfidence,PUBLIC_STATIONS,progressOf} from '../src/reports.js';
 import {homography,applyH,warp,autoLevels,pixelate,defaultQuad,mapBox} from '../src/rectify.js';
 import {parseAI,analyzeWithAI} from '../server/ai.js';
 import {DAEJEON_CANDIDATES} from '../src/daejeon-candidates.js';
@@ -23,11 +23,11 @@ const facades={replacements:[
  {is_active:true,image_url:'/data/jury-frozen/images/kakao.png',replacement_width_px:340,replacement_height_px:86,current_store_name:'F02WL072',slot:{slot_alias:'F02WL072-S26',floor:'2F',longitude:S26[0],latitude:S26[1],height_m:S26[2],camera_heading_deg:4.89,surface_width_m:8,surface_height_m:2,model_name:'F02WL072',td_id:'b0054',object_label:'F02WL072'}}]};
 const catalog={facilities:[{id:'DEST-F02WL072-S25',name:'위니비니',floor:'2F',source_id:'F02WL072-S25',access:[S25[0],S25[1]+.00002,36.19],store:{category:'잡화'}},{id:'DEST-F02WL072-S26',name:'카카오프렌즈',floor:'2F',source_id:'F02WL072-S26',reference:{lon:S26[0],lat:S26[1],height:S26[2]}}],
  endpoints:[{id:'OD-1',name:'KTX&일반열차',floor:'2F',geometry:{type:'Point',coordinates:[126.9709,37.5538,36.2]}}]};
-let aiReply=null,aiCalls=0;
+let aiReply=null,aiCalls=0,aiRequest=null;
 globalThis.fetch=async(url,opts)=>{
  if(url===BASE+'/data/jury-frozen/approved-facades.json')return new Response(JSON.stringify(facades));
  if(url===BASE+'/data/experience/catalog.json')return new Response(JSON.stringify(catalog));
- if(url==='https://api.anthropic.com/v1/messages'){aiCalls++;const b=JSON.parse(opts.body);assert.equal(b.messages[0].content[0].type,'image');return new Response(JSON.stringify({content:[{type:'text',text:aiReply}]}));}
+ if(url==='https://api.anthropic.com/v1/messages'){aiCalls++;const b=JSON.parse(opts.body);aiRequest=b;assert.equal(b.messages[0].content[0].type,'image');return new Response(JSON.stringify({content:[{type:'text',text:aiReply}]}));}
  throw Error('unexpected fetch '+url);
 };
 const png=(w,h,extra=64)=>{const a=new Uint8Array(24+extra);a.set([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82]);new DataView(a.buffer).setUint32(16,w);new DataView(a.buffer).setUint32(20,h);return a;};
@@ -274,3 +274,62 @@ const nearA=await fresh('S201807',.0007),nearB=await fresh('S201807',.00071);awa
 const nearDraft=(await (await post('/api/console/proposals',draftInput(nearA))).json()).id;await ready(nearDraft);assert.equal((await post('/api/console/proposals/'+nearDraft+'/approve',{})).status,200);
 assert.equal(db.prepare('SELECT status FROM reports WHERE id=?').get(nearB.id).status,'accepted','neighbour is still pending');
 console.log('PASS: public reports regression + new structure adoption/draft/reload/version conflict, input/photo validation, private draft, explicit human checks, concurrent saves and approvals, Seoul approved map application, held-source guard, transaction rollback and public applied assets');
+
+// Multiple-view evidence stays attached to the same photo; legacy unknown remains unknown.
+assert.equal(validatePhotoView(undefined),'unknown');assert.equal(validatePhotoView('left'),'left');
+for(const bad of ['north',3,[],{},'<script>'])assert.throws(()=>validatePhotoView(bad),/사진/);
+assert.deepEqual(structurePixels([1,.6,2],'left'),[307,1024]);
+assert.deepEqual(structurePixels([1,.6,2],'back'),[512,1024]);
+const multiJar='nerd-reporter=eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+res=await call('/api/reports',{method:'POST',body:report({type:'new',description:'여러 면 키오스크'}),jar:multiJar});const multi=(await res.json()).id,views=['context','left','front','right','back'],evidence=[];
+for(const view_role of views){const uploaded=await call('/api/reports/'+multi+'/photos',{method:'POST',raw:png(640,480),jar:multiJar});assert.equal(uploaded.status,201);evidence.push({id:(await uploaded.json()).id,view_role,caption:view_role,mark:[.4,.5],preview:jpegUrl(jpeg(48,36))});}
+assert.equal((await call('/api/reports/'+multi+'/photos',{method:'POST',raw:png(640,480),jar:multiJar})).status,400);
+assert.equal((await call('/api/reports/'+multi+'/submit',{method:'POST',jar:multiJar,body:{photos:[evidence[0],{...evidence[1],view_role:'north'}]}})).status,400);
+assert.equal(db.prepare('SELECT count(*) AS n FROM report_photos WHERE report_id=? AND caption IS NOT NULL').get(multi).n,0,'invalid role makes no partial metadata change');
+assert.equal(db.prepare('SELECT status FROM reports WHERE id=?').get(multi).status,'received');
+assert.equal((await call('/api/reports/'+multi+'/submit',{method:'POST',jar:multiJar,body:{photos:[evidence[0],evidence[0]]}})).status,400,'duplicate metadata rejected');
+res=await call('/api/reports/'+multi+'/submit',{method:'POST',jar:multiJar,body:{photos:evidence}});assert.equal(res.status,202);
+let multDetail=await (await call('/api/console/reports/'+multi,amb2)).json();
+assert.deepEqual(Object.fromEntries(multDetail.report.photos.map(p=>[p.id,p.view_role])),Object.fromEntries(evidence.map(p=>[p.id,p.view_role])));
+assert.equal(preferredPhoto(multDetail.report.photos),2,'front is not assumed to be the first photo');
+assert.equal(preferredPhoto(multDetail.report.photos,evidence[4].id),4,'saved photo takes precedence');
+assert.deepEqual(photoCoverage(multDetail.report.photos),{front:1,left:1,right:1,back:1,context:1});
+const multiMine=(await (await call('/api/reports/mine',{jar:multiJar})).json()).reports[0];assert.deepEqual(multiMine.photos.map(p=>p.view_role),views);
+let multiPublic=await (await call('/api/console/reports/'+multi,{jar:''})).json();assert(multiPublic.report.photos.every(p=>p.src===null));assert.deepEqual(multiPublic.report.photos.map(p=>p.view_role),views);
+assert.equal((await call('/api/reports/photos/'+evidence[0].id,{jar:''})).status,404,'all view originals remain private');
+assert.equal((await call('/api/reports/'+multi+'/submit',{method:'POST',jar:multiJar,body:{photos:evidence}})).status,409);
+assert.equal((await (await call('/api/console/reports/'+second,amb2)).json()).report.photos[0].view_role,'unknown','legacy photo not relabeled');
+
+// AI receives all five labeled views; missing file does not shift another person's privacy box.
+aiReply=JSON.stringify({storefront_quad:{photo:2,points:[[.1,.1],[.9,.1],[.9,.9],[.1,.9]]},storefront_quads:[{photo:1,points:[[.1,.1],[.9,.1],[.9,.9],[.1,.9]]},{photo:4,points:[[.1,.1],[.9,.1],[.9,.9],[.1,.9]]}],people:[{photo:4,box:[.2,.3,.1,.2]}],summary:'여러 면 확인'});
+assert.equal((await call('/api/console/reports/'+multi+'/analyze',{...amb2,method:'POST',body:{},e:aiEnv})).status,200);
+assert.equal(aiRequest.messages[0].content.filter(c=>c.type==='image').length,5);
+assert.match(aiRequest.messages[0].content.find(c=>c.type==='text').text,/"view_role":"back"/);
+let linkedAI=JSON.parse(db.prepare('SELECT analysis FROM reports WHERE id=?').get(multi).analysis).ai;
+assert.equal(linkedAI.storefront_quad.photo_id,evidence[2].id);assert.equal(linkedAI.people[0].photo_id,evidence[4].id);assert.equal(linkedAI.people[0].photo,4);
+const contextBytes=files.get('report/'+evidence[0].id);files.delete('report/'+evidence[0].id);
+aiReply=JSON.stringify({people:[{photo:3,box:[.2,.3,.1,.2]}],storefront_quad:{photo:1,points:[[.1,.1],[.9,.1],[.9,.9],[.1,.9]]},summary:'일부 사진 확인'});
+await call('/api/console/reports/'+multi+'/analyze',{...amb2,method:'POST',body:{},e:aiEnv});linkedAI=JSON.parse(db.prepare('SELECT analysis FROM reports WHERE id=?').get(multi).analysis).ai;
+assert.equal(linkedAI.people[0].photo,4);assert.equal(linkedAI.people[0].photo_id,evidence[4].id);assert.equal(linkedAI.storefront_quad.photo,2);files.set('report/'+evidence[0].id,contextBytes);
+
+// Four-face draft uses per-face exact dimensions, owned evidence and immutable private objects.
+await post('/api/console/reports/'+multi+'/decision',{status:'accepted'});
+const ms={name:'여러 면 키오스크',floor:'2F',position:[126.9708,37.5537,36.19],size:[1,.6,2],heading:15,color:'#a9b6b0',dimension_basis:'estimated'},quad=[[10,10],[630,10],[630,470],[10,470]];
+const facePayload=Object.fromEntries(STRUCTURE_FACES.map(side=>[side,{image:dataUrl(png(...structurePixels(ms.size,side))),photo:evidence.find(p=>p.view_role===side).id,quad,levels:true,people:true,blurs:[[10,10,15,15]]}]));
+const multiDraft={report_id:multi,report_version:db.prepare('SELECT updated_at FROM reports WHERE id=?').get(multi).updated_at,kind:'structure',target:{structure:ms},faces:facePayload,meta:{by:'approver'}};
+assert.equal((await post('/api/console/proposals',{...multiDraft,faces:{...facePayload,left:{...facePayload.left,photo:evidence[0].id}}})).status,400,'context is not a texture');
+assert.equal((await post('/api/console/proposals',{...multiDraft,faces:{...facePayload,left:{...facePayload.left,photo:facePayload.front.photo}}})).status,400,'wrong side rejected');
+assert.equal((await post('/api/console/proposals',{...multiDraft,faces:{...facePayload,left:{...facePayload.left,photo:firstPhoto}}})).status,400,'another report photo rejected');
+assert.equal((await post('/api/console/proposals',{...multiDraft,faces:{...facePayload,left:{...facePayload.left,image:dataUrl(png(512,1024))}}})).status,400,'left depth rather than front width');
+assert.equal((await post('/api/console/proposals',{...multiDraft,faces:{...facePayload,context:facePayload.front}})).status,400);
+res=await post('/api/console/proposals',multiDraft);assert.equal(res.status,201,await res.clone().text());const multiProposal=(await res.json()).id;
+const reloaded=await (await call('/api/console/reports/'+multi,amb2)).json();assert.deepEqual(Object.keys(reloaded.proposals[0].meta.faces).sort(),STRUCTURE_FACES.slice().sort());assert.deepEqual(reloaded.proposals[0].meta.faces.left.blurs,[[10,10,15,15]]);
+for(const side of STRUCTURE_FACES){assert.equal((await call('/api/console/proposal-images/'+multiProposal+'/'+side,amb2)).status,200);assert.equal((await call('/api/public/proposal-images/'+multiProposal+'/'+side,{jar:''})).status,404);}
+multiPublic=await (await call('/api/console/reports/'+multi,{jar:''})).json();assert.equal(multiPublic.proposals[0].images,null);assert.equal(multiPublic.proposals[0].meta,null);
+await ready(multiProposal);assert.equal((await post('/api/console/proposals/'+multiProposal+'/approve',{})).status,200);
+const approvedMulti=(await (await call('/api/public/station?key=S202103',{jar:''})).json()).assets.find(a=>a.proposal===multiProposal);assert.deepEqual(Object.keys(approvedMulti.facades).sort(),STRUCTURE_FACES.slice().sort());
+for(const url of Object.values(approvedMulti.facades))assert.equal((await call(url,{jar:''})).status,200);
+assert.equal(approvedMulti.facades.front,'/api/public/proposal-images/'+multiProposal,'legacy front URL preserved');
+assert.equal((await call('/api/public/proposal-images/'+multiProposal+'/context',{jar:''})).status,404);
+assert.doesNotThrow(()=>validateProject({...stationProject(stationDefinitions.find(s=>s.id==='S202103')),assets:[approvedMulti]}));
+console.log('PASS: multi-view evidence metadata/legacy/privacy, five-photo AI and missing-file ID mapping, four-face draft ownership/role/pixels/reload and final approval');

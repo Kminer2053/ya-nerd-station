@@ -3,7 +3,7 @@
 // the reporter and approvers; everyone else gets a tiny mosaic made in the reporter's browser. Processing (decisions,
 // facade proposals, approval) needs an approver session: a name and password from APPROVERS (local preview: a generated
 // local account). Station-level maintenance locks may queue approvals; Seoul accepts final administrator approvals.
-import {validateReportInput,validateStructure,structurePixels,stationByKey,connectedStation,PUBLIC_STATIONS,LIMITS,STATUS,DECISIONS,STAGE_FILTERS,nearest,ruleConfidence,metres,typeLabel,progressOf} from '../src/reports.js';
+import {validateReportInput,validateStructure,structurePixels,validatePhotoView,STRUCTURE_FACES,stationByKey,connectedStation,PUBLIC_STATIONS,LIMITS,STATUS,DECISIONS,STAGE_FILTERS,nearest,ruleConfidence,metres,typeLabel,progressOf} from '../src/reports.js';
 import {analyzeWithAI} from './ai.js';
 import {DAEJEON_CANDIDATES} from '../src/daejeon-candidates.js';
 
@@ -66,7 +66,7 @@ function suggest(type,slot,facility){
 // Matching, duplicate grouping and (when configured) the vision model. Never changes the map by itself.
 export async function analyzeReport(env,report,fetcher=fetch){
  const db=env.DB,position=parse(report.position),view=parse(report.view);
- const photos=(await db.prepare('SELECT id,mime FROM report_photos WHERE report_id=? ORDER BY created_at').bind(report.id).all()).results;
+ const photos=(await db.prepare('SELECT id,mime,view_role FROM report_photos WHERE report_id=? ORDER BY created_at,rowid').bind(report.id).all()).results;
  let data={slots:[],facilities:[]},dataError=null;
  if(connectedStation(report.station_key)&&position){try{data=await stationData(env,report.station_key,fetcher);}catch(e){dataError=e.message;}}
  const slot=position?nearest(data.slots,position,report.floor,LIMITS.matchRadius,view?.heading):null;
@@ -75,8 +75,10 @@ export async function analyzeReport(env,report,fetcher=fetch){
  const others=(await db.prepare("SELECT id,group_id,position,floor FROM reports WHERE station_key=? AND type=? AND id<>? AND status<>'rejected' AND created_at>=? ORDER BY created_at").bind(report.station_key,report.type,report.id,since).all()).results;
  const near=position?others.filter(o=>o.floor===report.floor&&o.position&&metres(parse(o.position),position)<=LIMITS.duplicateRadius):[];
  let ai=null,aiError=null;
- if(env.AI_API_KEY&&photos.length){try{const imgs=[];for(const p of photos.slice(0,2)){const b=await readObject(env,'report/'+p.id);if(b)imgs.push({mime:p.mime,bytes:b});}
-  ai=await analyzeWithAI(env,{photos:imgs,report,slot,facility},fetcher);}catch(e){aiError=e.message;}}
+ if(env.AI_API_KEY&&photos.length){try{const imgs=[];for(const [index,p] of photos.entries()){const b=await readObject(env,'report/'+p.id);if(b)imgs.push({id:p.id,index,view_role:p.view_role,mime:p.mime,bytes:b});}
+  ai=await analyzeWithAI(env,{photos:imgs,report,slot,facility},fetcher);
+  if(ai){const linked=q=>({...q,photo:imgs[q.photo].index,photo_id:imgs[q.photo].id,view_role:imgs[q.photo].view_role});if(ai.storefront_quad)ai.storefront_quad=linked(ai.storefront_quad);ai.storefront_quads=ai.storefront_quads.map(linked);ai.people=ai.people.map(linked);}
+ }catch(e){aiError=e.message;}}
  const rules=ruleConfidence({slotDistance:slot?.distance,duplicates:near.length,photos:photos.length});
  return {mode:ai?'ai':'rules',at:new Date().toISOString(),photo_ids:photos.map(p=>p.id),
   slot:slot&&{alias:slot.alias,name:slot.name,distance:slot.distance,px:slot.px,heading:slot.heading,image:slot.image,floor:slot.floor,position:slot.position,surface:slot.surface,model:slot.model,td_id:slot.td_id},
@@ -93,9 +95,13 @@ async function runAnalysis(env,id){
 }
 const audit=(db,actor,action,target,detail)=>db.prepare('INSERT INTO audit_log (id,actor,action,target,detail,created_at) VALUES (?,?,?,?,?,?)').bind(crypto.randomUUID(),actor,action,target,JSON.stringify(detail||{}),new Date().toISOString()).run();
 
-const photosOf=async(db,id)=>(await db.prepare('SELECT id,width,height,caption,mark,preview_size FROM report_photos WHERE report_id=? ORDER BY created_at').bind(id).all()).results;
+const photosOf=async(db,id)=>(await db.prepare('SELECT id,width,height,caption,mark,view_role,preview_size FROM report_photos WHERE report_id=? ORDER BY created_at,rowid').bind(id).all()).results;
 // full: the original (reporter and approvers); everyone gets the mosaic preview when the reporter's browser made one.
-const photoRow=(ph,full)=>({id:ph.id,caption:ph.caption||'',mark:parse(ph.mark),width:ph.width,height:ph.height,src:full?'/api/reports/photos/'+ph.id:null,preview:ph.preview_size?'/api/public/report-previews/'+ph.id:null});
+const photoRow=(ph,full)=>({id:ph.id,caption:ph.caption||'',mark:parse(ph.mark),view_role:ph.view_role||'unknown',width:ph.width,height:ph.height,src:full?'/api/reports/photos/'+ph.id:null,preview:ph.preview_size?'/api/public/report-previews/'+ph.id:null});
+const faceObject=(id,side)=>'proposal/'+id+(side==='front'?'':'/'+side);
+const faceUrl=(id,side,publicImage=false)=>(publicImage?'/api/public/proposal-images/':'/api/console/proposal-images/')+id+(side==='front'?'':'/'+side);
+const proposalFaces=pr=>{const faces=parse(pr.meta,{})?.faces;return faces&&typeof faces==='object'?Object.keys(faces).filter(s=>STRUCTURE_FACES.includes(s)):['front'];};
+const proposalImages=(pr,allowed,publicImage=false)=>allowed?Object.fromEntries(proposalFaces(pr).map(s=>[s,faceUrl(pr.id,s,publicImage)])):null;
 const proposalsOf=async(db,id)=>(await db.prepare("SELECT id,kind,target,meta,status,confidence,reviewer,created_at,decided_at,reason FROM proposals WHERE report_ids LIKE ? ORDER BY CASE WHEN status IN ('draft','ready','queued','applied') THEN 0 ELSE 1 END,created_at DESC").bind('%'+id+'%').all()).results;
 const brief=p=>p?{status:p.status,created_at:p.created_at,decided_at:p.decided_at}:null;
 function baseRow(r){return {id:r.id,station_key:r.station_key,station_name:stationByKey(r.station_key)?.name||r.station_key,type:r.type,type_label:typeLabel(r.type),floor:r.floor,place_note:r.place_note,description:r.description,
@@ -133,9 +139,9 @@ export async function reportsApi(request,env,ctx,{json,bytes,digest}){
     assets:Object.values(layer?.assets||{}),facilities:data.facilities.map(f=>({id:f.id,name:f.name,floor:f.floor,category:f.category,kind:f.kind||'facility',position:f.position})),endpoints:data.endpoints,overlays,
     slots:data.slots.map(x=>({alias:x.alias,name:x.name,floor:x.floor,position:x.position,heading:x.heading})),changes},200,OPEN);
   }
-  let m=p.match(/^\/api\/public\/proposal-images\/([a-f0-9-]{36})$/);
-  if(m&&method==='GET'){const r=await db.prepare('SELECT status,mime FROM proposals WHERE id=?').bind(m[1]).first();if(!r||!['queued','applied'].includes(r.status))return json({error:'공개된 이미지가 아니에요.'},404);
-   const b=await readObject(env,'proposal/'+m[1]);return b?new Response(b,{headers:{'Content-Type':r.mime,'Cache-Control':'public,max-age=3600','X-Content-Type-Options':'nosniff',...OPEN}}):json({error:'이미지가 없어요.'},404);}
+  let m=p.match(/^\/api\/public\/proposal-images\/([a-f0-9-]{36})(?:\/(front|left|right|back))?$/);
+  if(m&&method==='GET'){const r=await db.prepare('SELECT status,mime,meta FROM proposals WHERE id=?').bind(m[1]).first(),side=m[2]||'front';if(!r||!['queued','applied'].includes(r.status)||!proposalFaces(r).includes(side))return json({error:'공개된 이미지가 아니에요.'},404);
+   const b=await readObject(env,faceObject(m[1],side));return b?new Response(b,{headers:{'Content-Type':parse(r.meta,{})?.faces?.[side]?.mime||r.mime,'Cache-Control':'public,max-age=3600','X-Content-Type-Options':'nosniff',...OPEN}}):json({error:'이미지가 없어요.'},404);}
   m=p.match(/^\/api\/public\/report-previews\/([a-f0-9-]{36})$/);
   if(m&&method==='GET'){const ph=await db.prepare('SELECT p.preview_size,r.status FROM report_photos p JOIN reports r ON r.id=p.report_id WHERE p.id=?').bind(m[1]).first();
    if(!ph?.preview_size||['received','rejected'].includes(ph.status))return json({error:'볼 수 없는 사진이에요.'},404);
@@ -170,14 +176,16 @@ export async function reportsApi(request,env,ctx,{json,bytes,digest}){
    if(!count.n)return json({error:'사진을 한 장 이상 올려 주세요.'},400);
    // What the reporter says about each photo: a caption, the spot they tapped, and the mosaic for the public inbox.
    const v=await body(),own=new Set((await db.prepare('SELECT id FROM report_photos WHERE report_id=?').bind(r.id).all()).results.map(x=>x.id));
-   for(const n of Array.isArray(v.photos)?v.photos.slice(0,LIMITS.photos):[]){
-    if(!n||!own.has(n.id))continue;
+   if(v.photos!==undefined&&(!Array.isArray(v.photos)||v.photos.length>LIMITS.photos))return json({error:'사진은 '+LIMITS.photos+'장까지 보내 주세요.'},400);
+   const notes=(v.photos||[]).filter(n=>n&&own.has(n.id)),seen=new Set();
+   for(const n of notes){validatePhotoView(n.view_role);if(seen.has(n.id))return json({error:'같은 사진이 두 번 지정됐어요.'},400);seen.add(n.id);}
+   for(const n of notes){
     const caption=typeof n.caption==='string'?n.caption.trim().slice(0,LIMITS.caption):'';
     const mark=Array.isArray(n.mark)&&n.mark.length===2&&n.mark.every(x=>Number.isFinite(x)&&x>=0&&x<=1)?JSON.stringify(n.mark.map(x=>Math.round(x*1e4)/1e4)):null;
     let preview=null;const pm=typeof n.preview==='string'&&n.preview.length<=LIMITS.previewChars?/^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/.exec(n.preview):null;
     if(pm){const bin=Uint8Array.from(atob(pm[1]),c=>c.charCodeAt(0)),info=imageInfo(bin);
      if(info?.mime==='image/jpeg'&&info.width&&info.height&&info.width<=LIMITS.previewPx&&info.height<=LIMITS.previewPx){await env.UPLOADS.put('report-preview/'+n.id,bin,{httpMetadata:{contentType:'image/jpeg'}});preview=bin.length;}}
-    await db.prepare('UPDATE report_photos SET caption=?,mark=?,preview_size=? WHERE id=?').bind(caption||null,mark,preview,n.id).run();
+    await db.prepare('UPDATE report_photos SET caption=?,mark=?,view_role=?,preview_size=? WHERE id=? AND report_id=?').bind(caption||null,mark,validatePhotoView(n.view_role),preview,n.id,r.id).run();
    }
    await db.prepare('UPDATE reports SET status=?,history=?,updated_at=? WHERE id=?').bind('analyzing',stepped(r.history,'analyzing'),now,r.id).run();
    const job=runAnalysis(env,r.id);if(ctx?.waitUntil){ctx.waitUntil(job);}else await job;
@@ -230,7 +238,7 @@ export async function reportsApi(request,env,ctx,{json,bytes,digest}){
     if(!m[2]&&method==='GET'){
      const full=Boolean(me.approver||reporter&&r.reporter_hash===reporter),hidden=r.status==='rejected'&&!me.approver,prs=await proposalsOf(db,r.id);
      const group=r.group_id?(await db.prepare('SELECT id,status,created_at FROM reports WHERE group_id=? AND id<>? ORDER BY created_at').bind(r.group_id,r.id).all()).results.map(g=>({...g,status_label:STATUS[g.status]})):[];
-     const proposals=prs.map(x=>({...x,meta:me.approver?parse(x.meta,{}):null,reviewer:me.approver?x.reviewer:null,target:parse(x.target,{}),image:me.approver?'/api/console/proposal-images/'+x.id:['queued','applied'].includes(x.status)?'/api/public/proposal-images/'+x.id:null}));
+     const proposals=prs.map(x=>({...x,meta:me.approver?parse(x.meta,{}):null,reviewer:me.approver?x.reviewer:null,target:parse(x.target,{}),images:proposalImages(x,me.approver||['queued','applied'].includes(x.status),!me.approver),image:me.approver?'/api/console/proposal-images/'+x.id:['queued','applied'].includes(x.status)?'/api/public/proposal-images/'+x.id:null}));
      const base=baseRow(r);
      return json({report:{...base,description:hidden?'':base.description,place_note:hidden?'':base.place_note,hidden,position:parse(r.position),view:parse(r.view),group_id:r.group_id,user:Boolean(r.user_id),
       updated_at:r.updated_at,analysis:hidden?null:parse(r.analysis),photos:hidden?[]:(await photosOf(db,r.id)).map(x=>photoRow(x,full)),originals:full,proposal:brief(prs[0]),progress:progressOf(r.status,prs[0]?.status)},
@@ -279,17 +287,26 @@ export async function reportsApi(request,env,ctx,{json,bytes,digest}){
     const isStructure=v.kind==='structure';let structure=null;
     if(isStructure){if(r.type!=='new')return json({error:'새로 생김 제보에서 구조물 초안을 만드세요.'},400);if(r.status!=='accepted')return json({error:'먼저 제보를 채택하세요. 채택은 지도 반영이 아닙니다.'},409);structure=validateStructure(v.target?.structure,r.station_key);}
     const slot=isStructure?{alias:'report-'+r.id,name:structure.name,px:structurePixels(structure.size),image:null}:(await stationData(env,r.station_key)).slots.find(s=>s.alias===v.target?.alias);if(!slot)return json({error:'이 역에서 찾을 수 없는 파사드 자리예요.'},400);
-    const dm=/^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/=]+)$/.exec(String(v.image||''));if(!dm)return json({error:'보정한 이미지를 PNG 또는 JPEG로 보내 주세요.'},400);
-    const bin=Uint8Array.from(atob(dm[2]),c=>c.charCodeAt(0)),info=imageInfo(bin);if(!info||info.mime!==dm[1]||bin.length>LIMITS.photoBytes)return json({error:'이미지 형식이나 크기를 확인하세요. (4MB까지)'},400);
-    if(info.width!==slot.px[0]||info.height!==slot.px[1])return json({error:'파사드 규격('+slot.px.join('×')+' px)에 맞춰 보정해 주세요.'},400);
-    if(isStructure){const photo=await db.prepare('SELECT id,width,height FROM report_photos WHERE id=? AND report_id=?').bind(v.meta?.photo||'',r.id).first(),q=v.meta?.quad;
-     if(!photo||!Array.isArray(q)||q.length!==4||!q.every(pt=>Array.isArray(pt)&&pt.length===2&&pt.every(Number.isFinite)&&pt[0]>=0&&pt[0]<=photo.width&&pt[1]>=0&&pt[1]<=photo.height))return json({error:'이 제보의 사진과 사진 안의 네 모서리를 확인하세요.'},400);
-     if(v.report_version!==r.updated_at)return json({error:'초안이 다른 창에서 변경됐어요. 다시 불러오세요.'},409);}
-    const id=crypto.randomUUID(),a=parse(r.analysis,{}),meta={quad:Array.isArray(v.meta?.quad)?v.meta.quad.slice(0,4):null,photo:v.meta?.photo||null,levels:Boolean(v.meta?.levels),blurs:Array.isArray(v.meta?.blurs)?v.meta.blurs.slice(0,40):[],by:v.meta?.by==='agent'?'agent':'approver'};
-    await env.UPLOADS.put('proposal/'+id,bin,{httpMetadata:{contentType:info.mime}});
+    if(v.faces!==undefined&&(!isStructure||!v.faces||typeof v.faces!=='object'||Array.isArray(v.faces)||Object.keys(v.faces).some(s=>!STRUCTURE_FACES.includes(s))))return json({error:'구조물 사진은 정면·좌측면·우측면·후면만 지정하세요. 주변 사진은 배치 확인용입니다.'},400);
+    const rawFaces=isStructure&&v.faces?{...v.faces}:{front:{image:v.image,...v.meta}},prepared={},faceMeta={};let total=0;
+    if(!rawFaces.front)return json({error:'구조물의 정면 사진을 보정해 주세요.'},400);
+    for(const [side,f] of Object.entries(rawFaces)){
+     const dm=/^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/=]+)$/.exec(String(f?.image||''));if(!dm)return json({error:'보정한 이미지를 PNG 또는 JPEG로 보내 주세요.'},400);
+     const bin=Uint8Array.from(atob(dm[2]),c=>c.charCodeAt(0)),info=imageInfo(bin),px=isStructure?structurePixels(structure.size,side):slot.px;
+     if(!info||info.mime!==dm[1]||bin.length>LIMITS.photoBytes)return json({error:'이미지 형식이나 크기를 확인하세요. (면당 4MB까지)'},400);
+     total+=bin.length;if(total>4_800_000)return json({error:'여러 면 사진의 전체 용량이 너무 큽니다. JPEG로 최적화해 주세요.'},400);
+     if(info.width!==px[0]||info.height!==px[1])return json({error:'파사드 규격('+px.join('×')+' px)에 맞춰 보정해 주세요.'},400);
+     if(isStructure){const photo=await db.prepare('SELECT id,width,height,view_role FROM report_photos WHERE id=? AND report_id=?').bind(f.photo||'',r.id).first(),q=f.quad;
+      if(!photo||!Array.isArray(q)||q.length!==4||!q.every(pt=>Array.isArray(pt)&&pt.length===2&&pt.every(Number.isFinite)&&pt[0]>=0&&pt[0]<=photo.width&&pt[1]>=0&&pt[1]<=photo.height))return json({error:'이 제보의 사진과 사진 안의 네 모서리를 확인하세요.'},400);
+      if(photo.view_role!=='unknown'&&photo.view_role!==side)return json({error:'사진의 촬영 면과 구조물에 적용할 면이 다릅니다.'},400);}
+     faceMeta[side]={quad:Array.isArray(f.quad)?f.quad.slice(0,4):null,photo:f.photo||null,levels:Boolean(f.levels),people:f.people!==false,blurs:Array.isArray(f.blurs)?f.blurs.filter(b=>Array.isArray(b)&&b.length===4&&b.every(Number.isFinite)).slice(0,40):[],mime:info.mime,px};prepared[side]={bin,info};
+    }
+    if(isStructure&&v.report_version!==r.updated_at)return json({error:'초안이 다른 창에서 변경됐어요. 다시 불러오세요.'},409);
+    const id=crypto.randomUUID(),a=parse(r.analysis,{}),{bin,info}=prepared.front,meta={...faceMeta.front,by:v.meta?.by==='agent'?'agent':'approver',...(isStructure?{faces:faceMeta}:{})};
+    for(const [side,{bin,info}] of Object.entries(prepared))await env.UPLOADS.put(faceObject(id,side),bin,{httpMetadata:{contentType:info.mime}});
     const status=isStructure?'draft':'ready',target={alias:slot.alias,name:slot.name,side:'front',px:slot.px,before:slot.image,...(structure?{structure}:{})};
     const insert=db.prepare('INSERT INTO proposals (id,station_key,report_ids,kind,target,meta,mime,size,confidence,status,reviewer,reason,created_at,decided_at) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM reports WHERE id=? AND updated_at=? AND status IN (\'review\',\'accepted\'))')
-     .bind(id,r.station_key,JSON.stringify([r.id]),v.kind,JSON.stringify(target),JSON.stringify(meta),info.mime,bin.length,a.confidence??null,status,me.approver,null,now,null,r.id,r.updated_at);
+     .bind(id,r.station_key,JSON.stringify([r.id]),v.kind,JSON.stringify(target),JSON.stringify(meta),info.mime,total,a.confidence??null,status,me.approver,null,now,null,r.id,r.updated_at);
     const out=await db.batch([insert,
      db.prepare("UPDATE proposals SET status='superseded' WHERE report_ids=? AND id<>? AND status IN ('draft','ready') AND EXISTS (SELECT 1 FROM proposals WHERE id=?)").bind(JSON.stringify([r.id]),id,id),
      db.prepare('UPDATE reports SET updated_at=? WHERE id=? AND EXISTS (SELECT 1 FROM proposals WHERE id=?)').bind(new Date(Math.max(Date.now(),Date.parse(r.updated_at)+1)).toISOString(),r.id,id)]);
@@ -297,8 +314,8 @@ export async function reportsApi(request,env,ctx,{json,bytes,digest}){
     await audit(db,me.approver,'proposal.create',id,{report:r.id,alias:slot.alias,by:meta.by});
     return json({id,status,image:'/api/console/proposal-images/'+id},201);
    }
-   m=p.match(/^\/api\/console\/proposal-images\/([a-f0-9-]{36})$/);
-   if(m&&method==='GET'){const r=await db.prepare('SELECT mime FROM proposals WHERE id=?').bind(m[1]).first();const b=r&&await readObject(env,'proposal/'+m[1]);return b?new Response(b,{headers:{'Content-Type':r.mime,'Cache-Control':'private,max-age=600'}}):json({error:'이미지가 없어요.'},404);}
+   m=p.match(/^\/api\/console\/proposal-images\/([a-f0-9-]{36})(?:\/(front|left|right|back))?$/);
+   if(m&&method==='GET'){const r=await db.prepare('SELECT mime,meta FROM proposals WHERE id=?').bind(m[1]).first(),side=m[2]||'front';const b=r&&proposalFaces(r).includes(side)&&await readObject(env,faceObject(m[1],side));return b?new Response(b,{headers:{'Content-Type':parse(r.meta,{})?.faces?.[side]?.mime||r.mime,'Cache-Control':'private,max-age=600','X-Content-Type-Options':'nosniff'}}):json({error:'이미지가 없어요.'},404);}
    m=p.match(/^\/api\/console\/proposals\/([a-f0-9-]{36})\/(ready|approve|reject)$/);
    if(m&&method==='POST'){
     const pr=await db.prepare('SELECT * FROM proposals WHERE id=?').bind(m[1]).first();if(!pr)return json({error:'제안이 없어요.'},404);
@@ -323,7 +340,7 @@ export async function reportsApi(request,env,ctx,{json,bytes,digest}){
     // No read/replace of a station layer, so concurrent approvals cannot discard another approved asset.
     const commands=[db.prepare("UPDATE proposals SET status='applying' WHERE id=? AND status='ready' AND EXISTS (SELECT 1 FROM reports WHERE id=? AND (status='accepted' OR (?='facade' AND status='review')))").bind(pr.id,reportId,pr.kind)];
     if(!locked){const assetId='structure-'+pr.id,front='/api/public/proposal-images/'+pr.id;
-     const value=pr.kind==='structure'?{...validateStructure(target.structure,pr.station_key),id:assetId,hidden:false,facades:{front},proposal:pr.id}:{front,proposal:pr.id,at:now};
+     const value=pr.kind==='structure'?{...validateStructure(target.structure,pr.station_key),id:assetId,hidden:false,facades:proposalImages(pr,true,true),proposal:pr.id}:{front,proposal:pr.id,at:now};
      const path=pr.kind==='structure'?'$.assets."'+assetId+'"':'$.facades."'+target.alias+'"';
      commands.push(db.prepare("INSERT INTO station_layers (station_key,revision,body,updated_at) SELECT ?,1,json_set('{}',?,json(?)),? WHERE EXISTS (SELECT 1 FROM proposals WHERE id=? AND status='applying') ON CONFLICT(station_key) DO UPDATE SET revision=station_layers.revision+1,body=json_set(station_layers.body,?,json(?)),updated_at=excluded.updated_at").bind(pr.station_key,path,JSON.stringify(value),now,pr.id,path,JSON.stringify(value)));}
     const note=locked?'지도 반영 잠금으로 대기 중입니다. 잠금 해제 후 별도 반영이 필요해요.':'지도에 반영됐어요';

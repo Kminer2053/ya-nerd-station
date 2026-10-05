@@ -1,0 +1,1 @@
+ALTER TABLE `report_photos` ADD `view_role` text DEFAULT 'unknown' NOT NULL;

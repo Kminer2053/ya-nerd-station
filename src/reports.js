@@ -15,6 +15,18 @@ export const typeLabel=id=>REPORT_TYPES.find(t=>t.id===id)?.label||id;
 export const STATUS={received:'접수',analyzing:'정리 중',review:'검토 대기',accepted:'채택 · 초안 작업',draft:'초안',ready:'최종 승인 대기',superseded:'이전 초안',queued:'반영 대기',applied:'반영',held:'보류',duplicate:'중복',rejected:'반려'};
 export const DECISIONS=['accepted','held','duplicate','rejected','review'];
 export const LIMITS={photos:5,photoBytes:4_000_000,description:500,place:200,caption:120,previewChars:16_000,previewPx:64,perDay:10,matchRadius:12,duplicateRadius:8,duplicateDays:14,reason:300};
+export const PHOTO_VIEWS=[
+ {id:'front',label:'정면',hint:'간판부터 바닥까지 전체가 보이게'},
+ {id:'left',label:'좌측면',hint:'정면을 마주 봤을 때 왼쪽 면'},
+ {id:'right',label:'우측면',hint:'정면을 마주 봤을 때 오른쪽 면'},
+ {id:'back',label:'후면',hint:'구조물 뒤쪽 면'},
+ {id:'context',label:'주변·위치',hint:'주변 시설과 통행 공간이 함께 보이게'},
+];
+export const STRUCTURE_FACES=PHOTO_VIEWS.filter(v=>v.id!=='context').map(v=>v.id);
+export const photoViewLabel=id=>PHOTO_VIEWS.find(v=>v.id===id)?.label||'면 미지정';
+export function validatePhotoView(v){if(v===undefined||v===null||v==='unknown')return 'unknown';if(!PHOTO_VIEWS.some(p=>p.id===v))throw Error('사진의 면을 정면·좌측면·우측면·후면·주변 중에서 골라 주세요.');return v;}
+export function photoCoverage(photos){return Object.fromEntries(PHOTO_VIEWS.map(v=>[v.id,photos.filter(p=>p.view_role===v.id).length]));}
+export function preferredPhoto(photos,savedId=null,side='front'){let i=photos.findIndex(p=>p.id===savedId);if(i<0)i=photos.findIndex(p=>p.view_role===side);return Math.max(0,i);}
 
 // Progress line shown to everyone: 접수 → 자동 정리 → 승인자 검토 → 보정 제안 → 승인 → 지도 반영.
 // Held pauses the line, duplicate/rejected close it, a jury-locked approval waits before the map changes.
@@ -42,7 +54,7 @@ export const stationByKey=k=>PUBLIC_STATIONS.find(s=>s.key===k)||(typeof k==='st
 export const connectedStation=k=>stations.find(s=>s.id===k)||null;
 
 // A photo does not establish real dimensions. An approver supplies measured/estimated box geometry.
-export function structurePixels(size){const k=1024/Math.max(size[0],size[2]);return [Math.max(32,Math.round(size[0]*k)),Math.max(32,Math.round(size[2]*k))];}
+export function structurePixels(size,side='front'){const width=['left','right'].includes(side)?size[1]:size[0],k=1024/Math.max(width,size[2]);return [Math.max(32,Math.round(width*k)),Math.max(32,Math.round(size[2]*k))];}
 export function validateStructure(v,key){
  const s=connectedStation(key),fail=()=>{throw Error('구조물의 이름·층·위치·크기·방향을 확인하세요. 크기는 0.1~30m입니다.');};
  if(!s||!v||typeof v.name!=='string'||!v.name.trim()||v.name.length>100||!s.floors.includes(v.floor))fail();

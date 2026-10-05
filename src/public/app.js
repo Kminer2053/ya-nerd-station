@@ -2,12 +2,12 @@
 // Photos are re-encoded in the browser before upload (resized, EXIF and GPS dropped); a 48 px mosaic of each photo is
 // what the public inbox shows, the original stays with the reporter and approvers.
 import './style.css';
-import {REPORT_TYPES,PUBLIC_STATIONS,LIMITS,nearest} from '../reports.js';
+import {REPORT_TYPES,PUBLIC_STATIONS,LIMITS,PHOTO_VIEWS,photoViewLabel,photoCoverage,nearest} from '../reports.js';
 import {progressLine,stagePill} from '../progress.js';
 import {createScene} from '../scene.js';
 
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let stations=PUBLIC_STATIONS.map(s=>({...s,open:0,changes:0})),current=null,data=null,scene=null,project=null,pin=null,step=1,photos=[],type=null,busy=false;
+let stations=PUBLIC_STATIONS.map(s=>({...s,open:0,changes:0})),current=null,data=null,scene=null,project=null,pin=null,step=1,photos=[],type=null,busy=false,preparing=false,pickView='unknown',sheetEpoch=0;
 const when=iso=>{const d=new Date(iso);return d.toLocaleDateString('ko-KR',{month:'long',day:'numeric'})+' '+d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});};
 function toast(text){const t=$('#toast');t.textContent=text;t.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('on'),4200);}
 async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{...(typeof opts.body==='string'?{'Content-Type':'application/json'}:{}),...opts.headers}});const v=await r.json().catch(()=>({}));if(!r.ok)throw Error(v.error||'요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.');return v;}
@@ -65,7 +65,7 @@ $('#floor').onchange=()=>scene?.setFloor($('#floor').value);
 $('#reportHere').onclick=()=>{if(current?.connected&&!pin){toast('먼저 지도에서 현장과 다른 곳을 눌러 주세요.');$('#pinStatus').classList.add('nudge');setTimeout(()=>$('#pinStatus').classList.remove('nudge'),900);return;}openSheet();};
 
 // ---- Report sheet: 1 위치 → 2 사진·내용 (photos, their captions and marks, and the description together)
-function openSheet(){step=1;photos.forEach(p=>URL.revokeObjectURL(p.url));photos=[];type=null;$('#description').value='';$('#consent').checked=false;$('#sheetError').textContent='';renderSheet();$('#sheet').showModal();}
+function openSheet(){sheetEpoch++;step=1;photos.forEach(p=>URL.revokeObjectURL(p.url));photos=[];type=null;$('#description').value='';$('#consent').checked=false;$('#sheetError').textContent='';renderSheet();$('#sheet').showModal();}
 function placeBox(){
  if(current.connected)return '<div class="place"><b>'+esc(current.name)+' · '+esc(pin.floor)+'</b><span>지도에서 고른 위치'+(pin.near?' · '+esc(pin.near)+' 근처':'')+'</span><button type="button" id="repick" class="link">지도에서 다시 고르기</button></div>';
  return '<p class="fine">'+esc(current.name)+'은 3D 지도 연결 전이라 위치를 글로 적어 주세요.</p><label for="placeFloor">층 <small>(선택 · 예: 2F, B1)</small></label><input id="placeFloor" maxlength="3" autocomplete="off"><label for="placeNote">위치 설명</label><textarea id="placeNote" rows="2" maxlength="200" placeholder="예: 2층 대합실 동쪽 출구 옆"></textarea>';
@@ -76,7 +76,7 @@ function renderSheet(){
  $('#sheet').classList.toggle('wide',step===2);
  if(step===1){$('#placeBox').innerHTML=placeBox();$('#repick')&&($('#repick').onclick=()=>$('#sheet').close());}
  if(step===2){renderTypes();renderShots();countDesc();}
- $('#prevStep').hidden=step===1||step==='done';$('#nextStep').hidden=step==='done';$('#nextStep').textContent=step===2?'제보 보내기':'다음';$('#nextStep').disabled=busy;
+ $('#prevStep').hidden=step===1||step==='done';$('#prevStep').disabled=busy||preparing;$('#nextStep').hidden=step==='done';$('#nextStep').textContent=step===2?'제보 보내기':'다음';$('#nextStep').disabled=busy||preparing;
 }
 function renderTypes(){
  $('#typeChoices').innerHTML=REPORT_TYPES.map(t=>'<label class="chip"><input type="radio" name="type" value="'+t.id+'"'+(type===t.id?' checked':'')+'><span>'+esc(t.label)+'</span></label>').join('');
@@ -84,27 +84,39 @@ function renderTypes(){
 }
 const countDesc=()=>{$('#descCount').textContent=$('#description').value.length+' / '+LIMITS.description+'자';};
 $('#description').addEventListener('input',countDesc);
-$('#typeChoices').addEventListener('change',e=>{if(e.target.name==='type'){type=e.target.value;$('#sheetError').textContent='';$('#typeHint').textContent=REPORT_TYPES.find(t=>t.id===type)?.hint||'';}});
+$('#typeChoices').addEventListener('change',e=>{if(e.target.name==='type'&&!busy){type=e.target.value;$('#sheetError').textContent='';$('#typeHint').textContent=REPORT_TYPES.find(t=>t.id===type)?.hint||'';renderViews();}});
+function renderViews(){const counts=photoCoverage(photos);
+ $('#photoViews').innerHTML=PHOTO_VIEWS.map(v=>'<button type="button" data-add-view="'+v.id+'"'+(busy||preparing||photos.length>=LIMITS.photos?' disabled':'')+'><b>'+esc(v.label)+'</b><small>'+esc(v.hint)+'</small><span>'+(counts[v.id]?counts[v.id]+'장 등록':'사진 추가')+'</span></button>').join('');
+ $('#photoGuidance').textContent=type==='new'?'새 구조물은 정면 + 좌측면 또는 우측면을 권장합니다. 후면·주변 사진도 있으면 크기와 배치 확인에 도움이 됩니다.':type==='facade'?'파사드 교체는 정면 사진을 기본으로 합니다. 측면·주변 사진은 위치와 대상 확인에 사용합니다.':'올린 사진마다 어느 면인지 골라 주세요. 주변 사진은 위치·통행 공간 확인용입니다.';
+}
+$('#photoViews').addEventListener('click',e=>{const b=e.target.closest('[data-add-view]');if(!b||busy||preparing)return;pickView=b.dataset.addView;$('#photoInput').click();});
 // Each photo: tap the picture to mark what differs, caption it right below.
 function renderShots(){
  $('#shots').innerHTML=photos.map((p,i)=>'<li class="shot"><div class="frame" data-frame="'+i+'" role="button" tabindex="0" aria-label="사진 '+(i+1)+' · 눌러서 달라진 곳 표시"><img src="'+p.url+'" alt="사진 '+(i+1)+'">'+(p.mark?'<span class="mark" style="left:'+p.mark[0]*100+'%;top:'+p.mark[1]*100+'%"><b>'+(i+1)+'</b></span>':'<span class="tap">눌러서 표시</span>')+'</div>'
-  +'<div class="shot-foot"><input class="caption" data-caption="'+i+'" maxlength="'+LIMITS.caption+'" value="'+esc(p.caption||'')+'" placeholder="사진 '+(i+1)+'에서 달라진 점 (선택)" aria-label="사진 '+(i+1)+' 설명">'
+  +'<div class="shot-foot"><label class="shot-role">촬영한 면<select data-view="'+i+'" aria-label="사진 '+(i+1)+' 촬영한 면"><option value="unknown"'+(p.view_role==='unknown'?' selected':'')+'>면 선택</option>'+PHOTO_VIEWS.map(v=>'<option value="'+v.id+'"'+(p.view_role===v.id?' selected':'')+'>'+esc(v.label)+'</option>').join('')+'</select></label><input class="caption" data-caption="'+i+'" maxlength="'+LIMITS.caption+'" value="'+esc(p.caption||'')+'" placeholder="사진 '+(i+1)+'에서 달라진 점 (선택)" aria-label="사진 '+(i+1)+' 설명">'
   +(p.mark?'<button type="button" class="link" data-unmark="'+i+'">표시 지우기</button>':'')+'<button type="button" class="link" data-remove="'+i+'" aria-label="사진 '+(i+1)+' 빼기">빼기</button></div></li>').join('');
  $('#pickLabel').innerHTML=photos.length?'＋ 사진 더 추가 <small>('+photos.length+'/'+LIMITS.photos+'장)</small>':'＋ 사진 추가 <small>(1~'+LIMITS.photos+'장)</small>';
  $('#pickLabel').parentElement.hidden=photos.length>=LIMITS.photos;
+ renderViews();for(const el of document.querySelectorAll('#shots input,#shots select,#shots button,#photoInput,#description,#consent,#typeChoices input'))el.disabled=busy||preparing;
+ $('#prevStep').disabled=busy||preparing;$('#nextStep').disabled=busy||preparing;
 }
 $('#shots').addEventListener('click',e=>{
+ if(busy||preparing)return;
  const rm=e.target.closest('[data-remove]');if(rm){const [p]=photos.splice(Number(rm.dataset.remove),1);URL.revokeObjectURL(p.url);renderShots();return;}
  const um=e.target.closest('[data-unmark]');if(um){photos[Number(um.dataset.unmark)].mark=null;renderShots();return;}
  const f=e.target.closest('[data-frame]');if(!f)return;const img=f.querySelector('img').getBoundingClientRect(),i=Number(f.dataset.frame);
  photos[i].mark=[Math.min(1,Math.max(0,(e.clientX-img.left)/img.width)),Math.min(1,Math.max(0,(e.clientY-img.top)/img.height))];
  renderShots();document.querySelector('[data-caption="'+i+'"]')?.focus();
 });
-$('#shots').addEventListener('keydown',e=>{const f=e.target.closest('[data-frame]');if(!f||!['Enter',' '].includes(e.key))return;e.preventDefault();const i=Number(f.dataset.frame);photos[i].mark||=[.5,.5];renderShots();document.querySelector('[data-caption="'+i+'"]')?.focus();});
+$('#shots').addEventListener('keydown',e=>{const f=e.target.closest('[data-frame]');if(busy||preparing||!f||!['Enter',' '].includes(e.key))return;e.preventDefault();const i=Number(f.dataset.frame);photos[i].mark||=[.5,.5];renderShots();document.querySelector('[data-caption="'+i+'"]')?.focus();});
 $('#shots').addEventListener('input',e=>{const c=e.target.closest('[data-caption]');if(c)photos[Number(c.dataset.caption)].caption=c.value;});
-$('#closeSheet').onclick=()=>$('#sheet').close();
-$('#prevStep').onclick=()=>{if(step===2){step=1;renderSheet();}};
+$('#shots').addEventListener('change',e=>{const c=e.target.closest('[data-view]');if(c&&!busy){photos[Number(c.dataset.view)].view_role=c.value;renderViews();}});
+$('#pickLabel').onclick=()=>{pickView='unknown';};
+$('#closeSheet').onclick=()=>{if(!busy)$('#sheet').close();};
+$('#sheet').addEventListener('cancel',e=>{if(busy)e.preventDefault();});
+$('#prevStep').onclick=()=>{if(!busy&&!preparing&&step===2){step=1;renderSheet();}};
 $('#nextStep').onclick=()=>{
+ if(busy||preparing)return;
  $('#sheetError').textContent='';
  if(step===1){if(!current.connected&&!$('#placeNote').value.trim()){$('#sheetError').textContent='위치를 글로 적어 주세요.';return;}
   if(!current.connected){pin={floor:$('#placeFloor').value.trim().toUpperCase()||null,note:$('#placeNote').value.trim()};}step=2;return renderSheet();}
@@ -117,32 +129,36 @@ async function prepare(file){
  let q=.88,blob;do{blob=await new Promise(r=>c.toBlob(r,'image/jpeg',q));q-=.12;}while(blob&&blob.size>LIMITS.photoBytes&&q>.4);
  if(!blob)throw Error('사진을 준비하지 못했어요.');
  const m=document.createElement('canvas'),km=48/Math.max(c.width,c.height),mx=m.getContext('2d');m.width=Math.max(1,Math.round(c.width*km));m.height=Math.max(1,Math.round(c.height*km));mx.imageSmoothingQuality='high';mx.drawImage(c,0,0,m.width,m.height);
- return {blob,url:URL.createObjectURL(blob),width:c.width,height:c.height,preview:m.toDataURL('image/jpeg',.7),caption:'',mark:null};
+ src.close?.();return {blob,url:URL.createObjectURL(blob),width:c.width,height:c.height,preview:m.toDataURL('image/jpeg',.7),caption:'',mark:null,view_role:'unknown'};
 }
-$('#photoInput').addEventListener('change',async e=>{const files=[...e.target.files];e.target.value='';
- for(const f of files){if(photos.length>=LIMITS.photos){toast('사진은 '+LIMITS.photos+'장까지 올릴 수 있어요.');break;}try{photos.push(await prepare(f));}catch(err){toast(err.message);}}renderShots();});
+$('#photoInput').addEventListener('change',async e=>{const files=[...e.target.files],role=pickView,epoch=sheetEpoch;e.target.value='';pickView='unknown';if(busy||preparing||!files.length)return;preparing=true;renderShots();
+ try{for(const f of files){if(photos.length>=LIMITS.photos){toast('사진은 '+LIMITS.photos+'장까지 올릴 수 있어요.');break;}try{const p=await prepare(f);if(epoch!==sheetEpoch){URL.revokeObjectURL(p.url);break;}p.view_role=role;photos.push(p);}catch(err){toast(err.message);}}}finally{preparing=false;renderShots();}});
 async function submit(){
+ if(busy||preparing)return;
  if(!type){$('#sheetError').textContent='무엇이 달라졌는지 골라 주세요.';return;}
  if(!photos.length){$('#sheetError').textContent='사진을 한 장 이상 올려 주세요.';return;}
+ if(photos.some(p=>p.view_role==='unknown')){$('#sheetError').textContent='사진마다 정면·좌측면·우측면·후면·주변 중 어느 면인지 골라 주세요.';return;}
+ if(['facade','new'].includes(type)&&!photos.some(p=>p.view_role==='front')){$('#sheetError').textContent='파사드·새 구조물 제보에는 정면 사진 한 장을 포함해 주세요.';return;}
  if(!$('#consent').checked){$('#sheetError').textContent='사진과 내용 사용 동의에 체크해 주세요.';return;}
- busy=true;renderSheet();const btn=$('#nextStep');
+ const submitted=photos.map(p=>({...p,mark:p.mark?.slice()})),reportBody={station:current.key,floor:pin?.floor??null,position:current.connected?pin.position:null,view:pin?.view||null,place_note:current.connected?'':pin?.note||'',type,description:$('#description').value.trim(),consent:true};
+ busy=true;renderSheet();const btn=$('#nextStep');$('#prevStep').disabled=true;$('#closeSheet').disabled=true;
  try{
   btn.textContent='보내는 중…';
-  const r=await api('/api/reports',{method:'POST',body:JSON.stringify({station:current.key,floor:pin?.floor??null,position:current.connected?pin.position:null,view:pin?.view||null,place_note:current.connected?'':pin?.note||'',type,description:$('#description').value.trim(),consent:true})});
+  const r=await api('/api/reports',{method:'POST',body:JSON.stringify(reportBody)});
   const ids=[];
-  for(const [i,p] of photos.entries()){btn.textContent='사진 올리는 중 '+(i+1)+'/'+photos.length;const up=await fetch(r.photos,{method:'POST',headers:{'Content-Type':p.blob.type},body:p.blob});const v=await up.json().catch(()=>({}));if(!up.ok)throw Error(v.error||'사진을 올리지 못했어요.');ids.push(v.id);}
+  for(const [i,p] of submitted.entries()){btn.textContent='사진 올리는 중 '+(i+1)+'/'+submitted.length;const up=await fetch(r.photos,{method:'POST',headers:{'Content-Type':p.blob.type},body:p.blob});const v=await up.json().catch(()=>({}));if(!up.ok)throw Error(v.error||'사진을 올리지 못했어요.');ids.push(v.id);}
   btn.textContent='정리하는 중…';
-  const s=await api('/api/reports/'+r.id+'/submit',{method:'POST',body:JSON.stringify({photos:photos.map((p,i)=>({id:ids[i],caption:p.caption||'',mark:p.mark,preview:p.preview}))})});
+  const s=await api('/api/reports/'+r.id+'/submit',{method:'POST',body:JSON.stringify({photos:submitted.map((p,i)=>({id:ids[i],view_role:p.view_role,caption:p.caption||'',mark:p.mark,preview:p.preview}))})});
   step='done';$('#doneText').textContent=current.name+' 제보가 '+(s.status_label||'접수')+' 상태예요. 제보함에서 누구나 진행 상황을 볼 수 있고, 승인자가 확인하면 내 제보에 결과가 남아요.';
   if(current.connected){pin=null;project.points=project.points.filter(x=>x.id!=='PIN');scene?.render(project);updatePin();}
  }catch(e){$('#sheetError').textContent=e.message;}
- busy=false;renderSheet();
+ busy=false;$('#prevStep').disabled=false;$('#closeSheet').disabled=false;renderSheet();
 }
 $('#doneMore').onclick=()=>$('#sheet').close();
 $('#doneMine').onclick=()=>{$('#sheet').close();openMine();};
 
 // ---- My reports: progress line, photos with what I said about them, the approver's note
-const photoCard=p=>'<figure class="note-photo"><div class="frame"><img src="'+esc(p.src)+'" alt="" loading="lazy">'+(p.mark?'<span class="mark" style="left:'+p.mark[0]*100+'%;top:'+p.mark[1]*100+'%"></span>':'')+'</div>'+(p.caption?'<figcaption>'+esc(p.caption)+'</figcaption>':'')+'</figure>';
+const photoCard=p=>'<figure class="note-photo"><div class="frame"><img src="'+esc(p.src)+'" alt="'+esc(photoViewLabel(p.view_role))+' 사진" loading="lazy">'+(p.mark?'<span class="mark" style="left:'+p.mark[0]*100+'%;top:'+p.mark[1]*100+'%"></span>':'')+'</div><figcaption><b>'+esc(photoViewLabel(p.view_role))+'</b>'+(p.caption?' · '+esc(p.caption):'')+'</figcaption></figure>';
 async function openMine(){
  $('#mine').showModal();$('#mineList').innerHTML='<p class="fine">불러오는 중…</p>';
  try{const v=await api('/api/reports/mine');

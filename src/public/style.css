@@ -64,6 +64,7 @@ dialog::backdrop{background:#0b1512a6}
 .pick{display:block}.pick input{position:absolute;width:1px;height:1px;opacity:0}.pick span{display:grid;place-items:center;min-height:64px;border:2px dashed var(--moss);border-radius:12px;color:var(--moss);font-weight:800;cursor:pointer;background:#f6f9ef}
 .pick:has(input:focus-visible) span{outline:3px solid #8fb04a}
 .evidence{display:grid;gap:14px}.shots-col,.words-col{display:grid;gap:8px;align-content:start;min-width:0}
+.photo-guide{display:grid;gap:4px}.photo-views{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.photo-views button{display:grid;gap:4px;text-align:left;min-width:0;padding:12px}.photo-views small{font-size:13px;line-height:1.4;color:var(--muted)}.photo-views span{font-size:14px;font-weight:700;color:var(--moss)}.photo-views button:disabled{opacity:.6;cursor:default}.shot-role{display:grid;gap:4px;flex:1 1 130px}.shot-role select{width:100%;min-height:44px;border:1.5px solid var(--line);border-radius:10px;padding:8px;background:#fff;font-size:16px}
 .shots{list-style:none;margin:0;padding:0;display:grid;gap:12px}
 .shot{display:grid;gap:6px;justify-items:center;padding:8px;border:1px solid var(--line);border-radius:14px;background:#fff}.shot-foot{justify-self:stretch}
 .frame{position:relative;display:inline-block;max-width:100%;border-radius:10px;overflow:hidden;background:#10231d;cursor:crosshair;line-height:0}.frame img{display:block;width:auto;height:auto;max-width:100%;max-height:46dvh}
