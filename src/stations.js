@@ -53,7 +53,7 @@ export const ktxCatalog=[
  {name:'포항역',category:'기차역 > 고속철도'},
  {name:'행신역',category:'기차역 > 고속철도'},
 ];
-export const seoulOrigin=()=>['localhost','127.0.0.1'].includes(location.hostname)?'http://127.0.0.1:4196':location.hostname.endsWith('yanerdstation.kr')?'https://seoul.yanerdstation.kr':'https://station-one-collab.soalsebi.chatgpt.site';
+export const seoulOrigin=()=>['localhost','127.0.0.1'].includes(location.hostname)?(/^http:\/\/(?:127\.0\.0\.1|localhost):4210$/.test(new URLSearchParams(location.search).get('serviceOrigin')||'')?new URLSearchParams(location.search).get('serviceOrigin'):'http://127.0.0.1:4196'):location.hostname.endsWith('yanerdstation.kr')?'https://seoul.yanerdstation.kr':'https://station-one-collab.soalsebi.chatgpt.site';
 export const stationOf=p=>p.station||stations.find(s=>s.id===p.site_id)||stations[1];
 // Direct project writes are separate from the administrator-approved report layer.
 export const saveLocked=p=>p.site_id==='S202103';

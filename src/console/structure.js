@@ -1,3 +1,4 @@
+import {partsMarkup} from './parts-preview.js';
 import {connectedStation,structurePixels,validateStructure,preferredPhoto} from '../reports.js';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function initialStructure(report,saved){
@@ -15,4 +16,10 @@ export function structureFields(s,key){const st=connectedStation(key),field=(id,
 }
 export function readStructure(key){const get=id=>document.getElementById('st-'+id).value,n=id=>Number(get(id));return validateStructure({name:get('name'),floor:get('floor'),position:[n('lon'),n('lat'),n('alt')],size:[n('width'),n('depth'),n('height')],heading:n('heading'),color:get('color'),dimension_basis:get('basis')},key);}
 // Perspective box preview uses the exact proposed proportions. No map, light reconstruction or AI geometry claim.
-export function modelMarkup(s,image){const faces=typeof image==='string'?{front:image}:image||{},labels={front:'정면',left:'좌측면',right:'우측면',back:'후면'},k=170/Math.max(...s.size),[w,d,h]=s.size.map(n=>n*k);return '<div class="model-preview" aria-label="구조물 입체 모형"><div class="model-box" style="--w:'+w+'px;--d:'+d+'px;--h:'+h+'px;--color:'+s.color+'">'+['front','back','left','right'].map(side=>'<div class="model-'+side+'">'+(faces[side]?'<img src="'+esc(faces[side])+'" alt="보정한 '+labels[side]+'">':'')+'</div>').join('')+'<div class="model-top"></div></div></div><p class="fine model-caption">직육면체 모형 · '+s.size.join(' × ')+'m (폭·깊이·높이)<br>사진 없는 면은 단색 · 복잡한 형태 자동 복원 아님</p>';}
+export function modelMarkup(s,image){if(s.parts)return partsMarkup(s,typeof image==='string'?{front:image}:image||{});const faces=typeof image==='string'?{front:image}:image||{},labels={front:'정면',left:'좌측면',right:'우측면',back:'후면'},k=170/Math.max(...s.size),[w,d,h]=s.size.map(n=>n*k);return '<div class="model-preview" aria-label="구조물 입체 모형"><div class="model-box" style="--w:'+w+'px;--d:'+d+'px;--h:'+h+'px;--color:'+s.color+'">'+['front','back','left','right'].map(side=>'<div class="model-'+side+'">'+(faces[side]?'<img src="'+esc(faces[side])+'" alt="보정한 '+labels[side]+'">':'')+'</div>').join('')+'<div class="model-top"></div></div></div><p class="fine model-caption">직육면체 모형 · '+s.size.join(' × ')+'m (폭·깊이·높이)<br>사진 없는 면은 단색 · 복잡한 형태 자동 복원 아님</p>';}
+
+export function artifactReviewMarkup(meta,photos=[]){
+ const faces=Object.entries(meta?.faces||{}).filter(([,f])=>f.artifact_id&&f.provenance);if(!faces.length)return '';
+ const labels={front:'정면',left:'좌측면',right:'우측면',back:'후면'};
+ return '<section class="estimate-note"><b>사진 출처 · 생성과 보정 근거</b>'+faces.map(([side,f])=>'<div><p><strong>'+esc(labels[side]||side)+' · '+(f.provenance.method==='generated'?'생성 이미지':'사진 보정')+'</strong></p><p>출처: '+esc((f.source_photo_ids||[]).map(id=>{const index=photos.findIndex(p=>p.id===id);return index>=0?'제보 사진 '+(index+1):'대화에 보낸 사진';}).join(', '))+'</p><p>근거: '+esc(f.provenance.evidence)+'</p><p>한계: '+esc(f.provenance.uncertainty)+'</p></div>').join('')+'<p class="fine">저장된 모든 면을 확대해 위치·내용과 개인정보를 확인한 뒤 최종 승인하세요.</p></section>';
+}

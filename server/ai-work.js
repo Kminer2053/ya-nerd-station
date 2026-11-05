@@ -4,10 +4,11 @@ import {WORK_KINDS,removalCandidates,parseWorkPlan,workPrompt} from './work-plan
 import {decodePhoto,aiThumbnail,rectifyFace} from './work-images.js';
 import {requestVision} from './ai.js';
 import {workPhotos} from './work-chat.js';
+import {readDraftArtifact,artifactUsage} from './work-artifacts.js';
 const parse=(s,f=null)=>{try{return s?JSON.parse(s):f;}catch{return f;}};
 const now=()=>new Date().toISOString();
 const storageLimit=env=>Math.max(10,Math.min(2000,Number(env.REPORT_STORAGE_MB)||500))*1_000_000;
-const usedSql='(SELECT COALESCE(sum(size),0) FROM report_photos)+(SELECT COALESCE(sum(size),0) FROM proposals)+(SELECT COALESCE(sum(size),0) FROM work_files)';
+const usedSql='(SELECT COALESCE(sum(size),0) FROM report_photos)+(SELECT COALESCE(sum(size),0) FROM proposals)+(SELECT COALESCE(sum(size),0) FROM work_files)+'+artifactUsage;
 const configured=env=>Boolean(env.AI_API_KEY&&env.AI_MODEL&&['anthropic','openai'].includes(String(env.AI_PROVIDER||'anthropic').toLowerCase()));
 const jobRow=j=>({...j,input:parse(j.input,{}),plan:parse(j.plan),questions:parse(j.questions,[])});
 const object=async(env,key)=>{const o=await env.UPLOADS.get(key);if(!o)throw Error('사진 원본을 찾지 못했습니다.');return new Uint8Array(await new Response(o.body).arrayBuffer());};
@@ -77,11 +78,20 @@ export async function runWork(env,id,helpers,external=null){
   const pid=crypto.randomUUID(),effects=[],faces={},stamp=now();let size=0;
   for(const targetId of plan.hide_ids){const asset=layer.assets[targetId];effects.push({collection:'assets',id:targetId,before:JSON.stringify(asset),after:{...asset,hidden:true},label:asset.name,action:'hide'});}
   for(const [side,f] of Object.entries(plan.faces)){
-   const p=photos.find(p=>p.id===f.photo_id),bytes=await object(env,p.storage_key||'report/'+p.id),src=decodePhoto(bytes,helpers.imageInfo(bytes)),px=plan.kind==='structure'?structurePixels(geometry.size,side):slot.px;
+   const px=plan.kind==='structure'?structurePixels(geometry.size,side):slot.px;
+   if(f.artifact_id){
+    if(!external)throw Error('외부 작업에 저장한 이미지가 필요합니다.');
+    const a=await readDraftArtifact(env,f.artifact_id,j);if(a.px[0]!==px[0]||a.px[1]!==px[1])throw Error('생성 이미지가 대상 규격('+px.join('×')+' px)과 다릅니다.');
+    size+=a.bytes.length;if(size>16_000_000)throw Error('전체 초안 이미지 용량이 16MB를 넘습니다.');
+    const key='proposal/'+pid+(side==='front'?'':'/'+side);staged.push(key);await env.UPLOADS.put(key,a.bytes,{httpMetadata:{contentType:a.mime}});
+    faces[side]={artifact_id:f.artifact_id,provenance:a.provenance,source_photo_ids:a.sources,sha256:a.sha256,mime:a.mime,px:a.px,privacy_reviewed:true};continue;
+   }
+   const p=photos.find(p=>p.id===f.photo_id),bytes=await object(env,p.storage_key||'report/'+p.id),src=decodePhoto(bytes,helpers.imageInfo(bytes));
    const out=rectifyFace(src,f,px);size+=out.bytes.length;if(out.bytes.length>4_800_000||size>16_000_000)throw Error('보정 이미지 용량 초과. 에비에게 이미지 최적화가 필요한 초안이라고 알려 주세요.');
    const imageKey='proposal/'+pid+(side==='front'?'':'/'+side);staged.push(imageKey);await env.UPLOADS.put(imageKey,out.bytes,{httpMetadata:{contentType:out.mime}});
    faces[side]={photo:p.id,quad:out.quad,blurs:out.blurs,levels:true,people:true,mime:out.mime,px,privacy_reviewed:true};
   }
+  if(geometry?.parts)for(const part of geometry.parts){const textures=part.type==='plane'?[part.texture]:Object.values(part.facades||{});if(textures.some(side=>!faces[side]))throw Error('구성요소가 실제 제출하지 않은 사진 면을 사용합니다.');}
   const name=geometry?.name||slot?.name||plan.name||'승인 대상',target={name,alias:slot?.alias||'report-'+r.id,before:slot?.image||null,px:faces.front?.px||null,...(geometry?{structure:geometry}:{})};
   if(plan.kind==='structure'){const aid='structure-'+pid;effects.push({collection:'assets',id:aid,before:'null',after:{...geometry,id:aid,hidden:false,facades:Object.fromEntries(Object.keys(faces).map(side=>[side,'/api/public/proposal-images/'+pid+(side==='front'?'':'/'+side)])),proposal:pid},label:name,action:'create'});}
   if(plan.kind==='facade'){if(!allowedKey(slot.alias))throw Error('파사드 자리 ID가 유효하지 않습니다.');effects.push({collection:'facades',id:slot.alias,before:JSON.stringify(layer.facades?.[slot.alias]??null),after:{front:'/api/public/proposal-images/'+pid,proposal:pid,at:stamp},label:name,action:'replace'});}

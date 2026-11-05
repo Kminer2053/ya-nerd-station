@@ -3,4 +3,6 @@ dist/
 .env*
 data-private/
 .sites-runtime/
+.codex-draft-worker/
+docs/goal-decisions-2026-11-06.md
 .DS_Store

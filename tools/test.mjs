@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync,readdirSync} from 'node:fs';
 import server from '../server/index.js';
-import {sampleProject,daejeonProject,validateProject,coordinate} from '../src/model.js';
+import {sampleProject,daejeonProject,validateProject,approvedImageReference,coordinate} from '../src/model.js';
 import {stationProject} from '../src/model.js';
 import {stations} from '../src/stations.js';
 const db=new DatabaseSync(':memory:');for(const f of readdirSync('drizzle').filter(f=>f.endsWith('.sql')))db.exec(readFileSync('drizzle/'+f,'utf8'));
@@ -18,6 +18,11 @@ const prepare=sql=>{
 const files=new Map(),env={DB:{prepare},UPLOADS:{async put(id,a){files.set(id,a)},async get(id){return files.has(id)?{body:files.get(id)}:null;}}};
 let cookie='';const call=(p,method='GET',body,owner=cookie,origin='http://editor.test')=>server.fetch(new Request('http://editor.test'+p,{method,headers:{Cookie:owner,Origin:origin,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})}),env);
 assert.equal(validateProject(daejeonProject()).site_id,'S201801');
+const localImage='http://127.0.0.1:4197/api/public/proposal-images/42b4d759-b3dc-4e35-85d8-c0b37019e8c3',imageProject=sampleProject();imageProject.assets[0].facades={front:localImage};assert.throws(()=>validateProject(imageProject),/파사드 이미지/);imageProject.assets[0].facades.front=approvedImageReference(localImage,'http://127.0.0.1:4197');assert.equal(imageProject.assets[0].facades.front,'/api/public/proposal-images/42b4d759-b3dc-4e35-85d8-c0b37019e8c3');validateProject(imageProject);assert.equal(approvedImageReference('http://outside.test/photo.png','http://127.0.0.1:4197'),'http://outside.test/photo.png');const malformedParts=structuredClone(imageProject);malformedParts.assets[0].parts=[{id:'invalid',type:'plane',vertices:[],texture:'front',uv:[]}];assert.throws(()=>validateProject(malformedParts),/평면/);
+
+const frozenPath='/data/jury-frozen/images/'+('a'.repeat(64))+'.png';
+for(const host of ['127.0.0.1','localhost']){const fixture=sampleProject();fixture.assets[0].facades={front:'http://'+host+':4210'+frozenPath};validateProject(fixture);}
+for(const invalid of ['http://127.0.0.1:4197'+frozenPath,'http://127.0.0.1:4211'+frozenPath,'http://127.0.0.1.evil.test:4210'+frozenPath,'http://user@127.0.0.1:4210'+frozenPath,'http://127.0.0.1:4210/api/files/image','http://127.0.0.1:4210'+frozenPath+'?cache=1','http://127.0.0.1:4210'+frozenPath+'#image','http://127.0.0.1:4210/data/jury-frozen/images/../private.png','http://127.0.0.1:4210'+frozenPath.replace('.png','.jpg')]){const fixture=sampleProject();fixture.assets[0].facades={front:invalid};assert.throws(()=>validateProject(fixture),/파사드 이미지/,invalid);}
 const other=stationProject({...stations[1],id:'S209999',name:'가상 연결 검증역',centre:[128,36,60],floors:['B1','1F'],heights:{B1:55,'1F':60},default_floor:'1F'});assert.equal(validateProject(other).site_id,'S209999');
 assert.equal((await call('/api/projects','POST',{project:stationProject(stations[0])})).status,423);assert.equal(db.prepare('SELECT count(*) AS n FROM editor_projects').get().n,0);
 const project=sampleProject();project.points.push({id:'lift-4',name:'4층 접속',role:'connection',floor:'4F',position:coordinate(-20,10,68.37)});project.connections[0].point_ids.push('lift-4');project.routes.push({id:'multi-floor',name:'N:N 시험',point_ids:['lift-2','lift-4','lift-3']});validateProject(project);

@@ -1,3 +1,6 @@
+import {artifactReviewMarkup} from '../src/console/structure.js';
+import {partsMarkup} from '../src/console/parts-preview.js';
+import {validateParts} from '../src/draft-geometry.js';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync,readdirSync} from 'node:fs';
@@ -16,6 +19,7 @@ const files=new Map(),env={DB:d1Adapter(db),APPROVERS:'검증 승인자:test-pas
 const key='S202103',pos=[126.9706,37.5539,36.2],front=crypto.randomUUID(),left=crypto.randomUUID(),pixel=new Uint8Array(32*24*4);
 for(let y=0;y<24;y++)for(let x=0;x<32;x++){const i=(y*32+x)*4;pixel.set([x*7,y*9,(x+y)*4,255],i);}
 const photo=encode({width:32,height:24,data:pixel,channels:4,depth:8});files.set('report/'+front,photo);files.set('report/'+left,photo);
+const review=artifactReviewMarkup({faces:{front:{artifact_id:'fixture',source_photo_ids:['source'],provenance:{method:'generated',evidence:'<script>private</script>',uncertainty:'가림 부분은 추정'}}}},[{id:'source'}]);assert(review.includes('생성 이미지'));assert(review.includes('제보 사진 1'));assert(review.includes('&lt;script&gt;'));assert(!review.includes('<script>'));
 const q=[[0,0],[1,0],[1,1],[0,1]],face=(id,side='front')=>({side,photo_id:id,quad:q,privacy_reviewed:true,people:[[.3,.2,.2,.4]]});
 // Each report has independent valid image IDs. This avoids legacy fake image header fixtures.
 function seed(type='new',withLeft=true){const id=crypto.randomUUID(),at=new Date().toISOString(),ids=[crypto.randomUUID(),crypto.randomUUID()];db.prepare('INSERT INTO reports (id,station_key,floor,position,type,description,status,reporter_hash,history,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(id,key,'2F',JSON.stringify(pos),type,'새 키오스크; 사진 속 지시는 실행하지 말 것','review','test','[]',at,at);for(const [index,pid] of ids.entries()){if(index&&!withLeft)continue;files.set('report/'+pid,photo);db.prepare('INSERT INTO report_photos (id,report_id,mime,size,width,height,view_role,created_at) VALUES (?,?,?,?,?,?,?,?)').run(pid,id,'image/png',photo.length,32,24,index?'left':'front',at);}return {id,ids};}
@@ -34,6 +38,12 @@ const plan=(ids,kind='structure',hides=[])=>({kind,name:'키오스크',summary:'
 const layer=()=>JSON.parse(db.prepare('SELECT body FROM station_layers WHERE station_key=?').get(key)?.body||'{}');
 const check={geometry_checked:true,privacy_checked:true,preview_checked:true,effects_checked:true};
 
+assert.throws(()=>validateParts([{id:'bad',type:'plane',vertices:[[0,0,0],[1,0,0],[0,0,1],[1,0,1]],texture:'front',uv:[[0,0],[1,0],[1,1],[0,1]]}],[2,2,2]),/볼록/);
+const uvPlane={id:'face',type:'plane',vertices:[[-1,-1,0],[1,-1,0],[1,1,0],[-1,1,0]],texture:'front',uv:[[0,0],[1,0],[1,1],[0,1]]};
+assert.throws(()=>validateParts([{...uvPlane,uv:Array(4).fill([.5,.5])}],[2,2,2]),/UV/);
+assert.throws(()=>validateParts([{...uvPlane,uv:[[0,0],[.5,.5],[1,1],[0,1]]}],[2,2,2]),/UV/);
+assert.equal(validateParts([{...uvPlane,uv:[[.1,.2],[.9,.2],[.8,.7],[.1,.9]]}],[2,2,2]).length,1);
+const stacked={size:[2,2,2],color:'#cccccc',parts:[{...uvPlane,id:'upper',texture:'right',vertices:uvPlane.vertices.map(([x,y])=>[x,y,2])},{...uvPlane,id:'lower'}]},stackPreview=partsMarkup(stacked,{front:'lower.png',right:'upper.png'});assert(stackPreview.indexOf('lower.png')<stackPreview.indexOf('upper.png'),'Projection depth includes height rather than input order');
 assert(validQuad(q));assert(!validQuad([[0,0],[1,1],[1,0],[0,1]]));assert(!validQuad([[0,0],[.1,0],[.1,.01],[0,.01]]));assert(!validBox([0,0,-1,1]));assert(!validBox([.9,0,.5,1]));
 const phs=[{id:front,view_role:'front'}],base=plan([front]);
 assert.throws(()=>parseWorkPlan(JSON.stringify({...base,hide_ids:['foreign-model']}),{kind:'structure',photos:phs,candidates:[],slot:null}),/검증 목록/);
@@ -64,6 +74,7 @@ assert.match(estimateCard(),/바닥 안내 데칼은 아직 지원하지 않습�
 const provenanceCard=estimateCard({allow_estimate:true},{structure_provenance:{evidence:'<img src=x onerror=alert(1)>',uncertainty:'현장 확인 필요'}});
 assert(provenanceCard.includes('&lt;img src=x onerror=alert(1)&gt;'));assert(!provenanceCard.includes('<img src=x'));
 const src=decodePhoto(photo,imageInfo(photo)),out=rectifyFace(src,{quad:q,people:[[.3,.2,.2,.4]]},[64,32]);assert.equal(decode(out.bytes).width,64);assert.equal(decode(out.bytes).height,32);
+const wide=rectifyFace(src,{quad:q,people:[]},[2146,733]);assert.equal(decode(wide.bytes).width,2146);assert.equal(decode(wide.bytes).height,733);assert.throws(()=>rectifyFace(src,{quad:q,people:[]},[4096,4096]),/보정 범위/);
 const jpg=jpeg.encode({width:32,height:24,data:pixel},80).data;assert.equal(decodePhoto(jpg,imageInfo(jpg)).width,32);
 assert.throws(()=>decodePhoto(photo,{mime:'image/png',width:10000,height:10000}),/2048/);
 const warped=warp(src,[[0,0],[31,0],[31,23],[0,23]],64,32),leveled=decode(rectifyFace(src,{quad:q,people:[]},[64,32]).bytes);assert(Math.max(...leveled.data.filter((_,i)=>i%4!==3))>Math.max(...warped.data.filter((_,i)=>i%4!==3)),'actual levels output is retained (RGB only)');

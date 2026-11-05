@@ -1,3 +1,4 @@
+import {conversationPresentation} from '../src/console/ebi-chat.js';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync,readdirSync} from 'node:fs';
@@ -8,6 +9,9 @@ import {d1Adapter} from './sqlite-adapter.mjs';
 
 // Exercise the real Worker endpoints with isolated, memory-only D1/R2.
 // A chat must not call a model provider, wake a dot, or publish a map change.
+const staleDraft={id:'old-job',kind:'conversation',status:'draft',proposal_id:'old-proposal'};
+for(const [status,label] of [['applied','지도 반영 완료'],['queued','승인 완료 · 지도 반영 대기'],['rejected','제보 반려 · 종료']]){const view=conversationPresentation({status},staleDraft);assert.equal(view.editable,false);assert.equal(view.label,label);assert(!view.guidance.includes('최종 승인하세요'));}
+assert.equal(conversationPresentation({status:'applied'},staleDraft).result,true);assert.equal(conversationPresentation({status:'rejected'},staleDraft).result,false);assert.equal(conversationPresentation({status:'accepted'},staleDraft).editable,true);
 const db=new DatabaseSync(':memory:');
 for(const file of readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort())db.exec(readFileSync('drizzle/'+file,'utf8'));
 let putHook=null;

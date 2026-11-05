@@ -1,3 +1,4 @@
+import {validateParts} from './draft-geometry.js';
 // Public reports: one vocabulary for the report form, the server checks and the ambassador console.
 // A report says "the 3D map and the station differ here"; ambassadors decide what changes.
 import {stations,ktxCatalog} from './stations.js';
@@ -61,7 +62,7 @@ export function validateStructure(v,key){
  if(!Array.isArray(v.position)||v.position.length!==3||!v.position.every(Number.isFinite)||Math.abs(v.position[0]-s.centre[0])>.03||Math.abs(v.position[1]-s.centre[1])>.03||v.position[2]<-200||v.position[2]>1000)fail();
  if(!Array.isArray(v.size)||v.size.length!==3||!v.size.every(n=>Number.isFinite(n)&&n>=.1&&n<=30)||!Number.isFinite(v.heading)||!/^#[a-fA-F0-9]{6}$/.test(v.color||''))fail();
  if(!['estimated','measured'].includes(v.dimension_basis))fail();
- return {name:v.name.trim(),floor:v.floor,position:v.position,size:v.size,heading:((v.heading%360)+360)%360,color:v.color,dimension_basis:v.dimension_basis};
+ return {name:v.name.trim(),floor:v.floor,position:v.position,size:v.size,heading:((v.heading%360)+360)%360,color:v.color,dimension_basis:v.dimension_basis,...(v.parts!==undefined?{parts:validateParts(v.parts,v.size)}:{})};
 }
 
 const LAT_M=111320;

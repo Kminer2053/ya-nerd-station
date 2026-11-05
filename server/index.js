@@ -1,6 +1,6 @@
 import {validateProject,sampleProject} from '../src/model.js';
 import {saveLocked} from '../src/stations.js';
-import {reportsApi} from './reports.js';
+import {reportsApi,seoulBase} from './reports.js';
 import {dotsMcp} from './dots-mcp.js';
 const json=(v,status=200,headers={})=>new Response(JSON.stringify(v),{status,headers:{'Content-Type':'application/json;charset=utf-8','Cache-Control':'private,no-store','X-Content-Type-Options':'nosniff',...headers}});
 const digest=async s=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)))].map(b=>b.toString(16).padStart(2,'0')).join('');
@@ -12,7 +12,7 @@ export default {async fetch(request,env,ctx){const u=new URL(request.url),p=u.pa
  const reports=await reportsApi(request,env,ctx,{json,bytes,digest});if(reports)return reports;
  if(p==='/api/seoul/snapshot'||p==='/api/seoul/hourly'){
   if(request.method!=='GET')return json({error:'서울역 원본 직접 저장 보호'},423);
-  const base=env.LOCAL_PREVIEW?'http://127.0.0.1:4196':'https://station-one-collab.soalsebi.chatgpt.site';
+  const base=seoulBase(env);
   const origin=u.searchParams.get('origin');if(p.endsWith('hourly')&&!/^[A-Z0-9_-]{1,100}$/.test(origin||''))return json({error:'원점 ID 오류'},400);
   try{const url=p.endsWith('snapshot')?base+'/api/toolkit/seoul':base+'/data/experience/origins/'+origin+'.json';const r=await fetch(url,{signal:AbortSignal.timeout(20000)});if(!r.ok)throw Error('기준 자료 응답 '+r.status);return json(await r.json());}catch(e){return json({error:'서울역 확정 자료 연결 실패. '+e.message},503);}
  }

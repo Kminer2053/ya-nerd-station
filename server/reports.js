@@ -10,7 +10,7 @@ import {aiWorkApi,workDetail} from './ai-work.js';
 import {dotsConsoleApi} from './dots-auth.js';
 import {chatConsoleApi} from './work-chat.js';
 
-export const seoulBase=env=>env.LOCAL_PREVIEW?'http://127.0.0.1:4196':'https://station-one-collab.soalsebi.chatgpt.site';
+export const seoulBase=env=>env.LOCAL_PREVIEW?(/^http:\/\/(?:127\.0\.0\.1|localhost):4210$/.test(env.LOCAL_SERVICE_ORIGIN||'')?env.LOCAL_SERVICE_ORIGIN:'http://127.0.0.1:4196'):'https://station-one-collab.soalsebi.chatgpt.site';
 let seoulCache=null;
 // Seoul facade slots and facilities from the Station One service (the jury-frozen register), cached per isolate.
 // Daejeon: the reviewed candidate register (texture-sign readings, unverified), bundled with the Worker.

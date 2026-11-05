@@ -4,7 +4,7 @@
 import './style.css';
 import './conversation.css';
 import {PUBLIC_STATIONS,STATUS,STAGE_FILTERS,PHOTO_VIEWS,STRUCTURE_FACES,photoViewLabel,photoCoverage,preferredPhoto,nearest,connectedStation} from '../reports.js';
-import {initialStructure,structureSlot,structureFields,readStructure,modelMarkup,resizeBlurs} from './structure.js';
+import {initialStructure,structureSlot,structureFields,readStructure,modelMarkup,resizeBlurs,artifactReviewMarkup} from './structure.js';
 import {progressLine,stagePill} from '../progress.js';
 import {warp,autoLevels,pixelate,defaultQuad,mapBox} from '../rectify.js';
 import {createScene} from '../scene.js';
@@ -25,7 +25,7 @@ async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{...(
 const ebiChat=createEbiChat({api,toast,onWorkChange:async id=>{if(detail?.report.id===id){await openReport(id);await loadList();}},onOpenDraft:async({reportId,proposalId})=>{if(detail?.report.id!==reportId)return;await openReport(reportId);if(detail?.report.id!==reportId)return;const proposal=[...document.querySelectorAll('[data-proposal]')].find(el=>el.dataset.proposal===proposalId);(proposal||$('#proposalList'))?.scrollIntoView({behavior:'smooth',block:'start'});}});
 ebiChat.mount($('#ebiChatPanel'));
 addEventListener('pagehide',()=>ebiChat.clear());
-function syncUrl(){const q=new URLSearchParams();if($('#fStation').value)q.set('station',$('#fStation').value);q.set('stage',stage);if(detail)q.set('report',detail.report.id);history.replaceState(null,'','?'+q);}
+function syncUrl(){const q=new URLSearchParams(),serviceOrigin=new URLSearchParams(location.search).get('serviceOrigin');if(['localhost','127.0.0.1'].includes(location.hostname)&&/^http:\/\/(?:127\.0\.0\.1|localhost):4210$/.test(serviceOrigin||''))q.set('serviceOrigin',serviceOrigin);if($('#fStation').value)q.set('station',$('#fStation').value);q.set('stage',stage);if(detail)q.set('report',detail.report.id);history.replaceState(null,'','?'+q);}
 
 // ---- Approver session (name + password → HttpOnly session cookie)
 async function loadSession(){session=await api('/api/session').catch(()=>({approver:null}));renderWho();}
@@ -109,8 +109,9 @@ function renderProposals(){
  const all=detail.proposals,approver=Boolean(session.approver),ps=all.filter(p=>['draft','ready','applied','queued'].includes(p.status)).slice(0,1);
  $('#proposalList').innerHTML=ps.length?ps.map(p=>'<article class="proposal" data-proposal="'+esc(p.id)+'"><figure>'+(p.target.before?'<img src="'+esc(p.target.before)+'" alt="지금 지도">':'<span class="pending">'+(p.kind==='structure'?'새 구조물 · 아직 지도에 없음':p.kind==='removal'?'독립 등록된 구조물':'VWorld 원본 텍스처')+'</span>')+'<figcaption>변경 전</figcaption></figure><span aria-hidden="true">→</span><figure>'+(p.image?'<img src="'+esc(p.image)+'" alt="제안 이미지">':'<span class="pending">'+(p.kind==='removal'?'승인 후 숨김 · 원본 보존':'승인자 확인 중')+'</span>')+'<figcaption>제안 '+esc((p.target.px||[]).join('×'))+'</figcaption></figure>'
   +'<div><b>'+esc(p.target.name)+({structure:' · 새 구조물',removal:' · 장애물 숨김',facade:' · 파사드 교체'}[p.kind]||'')+'</b><span class="pill '+(p.status==='ready'?'info':tone[p.status]||'mute')+'">'+esc(STATUS[p.status]||p.status)+'</span>'+(p.reviewer?'<span class="fine">'+esc(p.reviewer)+'</span>':'')+(p.reason?'<p class="fine">'+esc(p.reason)+'</p>':'')+'</div>'
-  +(p.meta?.ai_job?'<section class="ai-effects"><b>AI 초안의 실제 변경 대상</b><p>'+esc(p.meta.summary)+'</p><ul>'+(p.target.effects||[]).map(e=>{const before=e.action==='hide'?JSON.parse(e.before):null;return '<li><strong>'+({hide:'숨김',create:'생성',replace:'파사드 교체'}[e.action]||'변경')+'</strong> · '+esc(e.label)+' <small>'+esc(e.id)+'</small>'+(before?'<br>'+esc(before.floor)+' · '+esc(before.position?.join(', '))+' · '+esc(before.size?.join('×'))+'m'+modelMarkup(before,before.facades||{})+'현재: 표시 → 승인 후: 숨김 · 원본과 복원 정보 보존':'')+'</li>';}).join('')+'</ul><p class="fine">원본 공유 모델은 자동 제거하지 않습니다. 사진에서 가려진 모양이나 면은 AI로 임의 생성하지 않습니다.</p></section>':'')
+  +(p.meta?.ai_job?'<section class="ai-effects"><b>AI 초안의 실제 변경 대상</b><p>'+esc(p.meta.summary)+'</p><ul>'+(p.target.effects||[]).map(e=>{const before=e.action==='hide'?JSON.parse(e.before):null;return '<li><strong>'+({hide:'숨김',create:'생성',replace:'파사드 교체'}[e.action]||'변경')+'</strong> · '+esc(e.label)+' <small>'+esc(e.id)+'</small>'+(before?'<br>'+esc(before.floor)+' · '+esc(before.position?.join(', '))+' · '+esc(before.size?.join('×'))+'m'+modelMarkup(before,before.facades||{})+'현재: 표시 → 승인 후: 숨김 · 원본과 복원 정보 보존':'')+'</li>';}).join('')+'</ul><p class="fine">원본 공유 모델은 자동 제거하지 않습니다. 사진에서 확인한 부분과 생성·추정한 부분의 근거와 한계를 함께 확인하세요.</p></section>':'')
   +(p.kind==='structure'&&p.image?'<section class="saved-model">'+modelMarkup(p.target.structure,p.images||p.image)+'<details class="face-review"><summary>보정된 모든 면 확인 · 사진을 누르면 확대</summary><div class="face-results">'+Object.entries(p.images||{front:p.image}).map(([side,url])=>'<figure><a href="'+esc(url)+'" target="_blank" rel="noopener"><img src="'+esc(url)+'" alt="보정한 '+esc(photoViewLabel(side))+'"></a><figcaption>'+esc(photoViewLabel(side))+'</figcaption></figure>').join('')+'</div></details><p class="fine">'+esc(p.target.structure.floor)+' · '+esc(p.target.structure.position.join(', '))+' · '+p.target.structure.heading+'°<br>크기 근거: '+(p.target.structure.dimension_basis==='measured'?'실측 / 도면 확인':'사진 참고 추정 · 현장 확인 필요')+'</p></section>':'')
+  +artifactReviewMarkup(p.meta,detail.report.photos)
   +(p.meta?.structure_provenance?'<div class="estimate-note"><b>추정 · 현장 확인 필요</b><p>근거: '+esc(p.meta.structure_provenance.evidence)+'</p><p>한계: '+esc(p.meta.structure_provenance.uncertainty)+'</p></div>':'')
   +(approver&&['draft','ready'].includes(p.status)&&detail.report.status==='accepted'&&p.meta?.ai_job?'<div class="draft-checks" data-checks="'+p.id+'"><p>수정할 부분은 왼쪽 대화에 적어 주세요. 새로운 요청을 보내면 이 수정안의 승인은 무효화되고 새 초안으로 이어집니다.</p><button type="button" data-saved-preview="'+p.id+'">지도에서 배치 확인</button><label><input type="checkbox" name="final"> 저장된 수정안의 위치·크기·방향·통행 폭, 모든 보정면의 개인정보, 생성·숨김·교체 대상을 확인했습니다.</label><button type="button" class="primary" data-final="'+p.id+'">최종 승인 · 지도에 반영</button></div>':approver&&['draft','ready'].includes(p.status)?'<div class="estimate-note">이전 수동 초안입니다. 에비에게 대화 작업을 맡기면 새 수정안으로 대체됩니다.</div>':'')
   +(approver&&p.meta?.ai_job&&p.status==='applied'&&['structure','removal'].includes(p.kind)?'<button type="button" data-undo="'+p.id+'">이 자동 작업만 되돌리기</button>':'')+'</article>').join('')
@@ -221,18 +222,22 @@ async function makeProposal({by='approver'}={}){
   toast(v.status==='draft'?'초안을 저장했어요. 아래 저장된 모든 면을 확인하고 확정하세요.':'제안을 만들었어요. 확인 후 승인하세요.');await loadList();await openReport(r.id);$('#proposalList').scrollIntoView({behavior:'smooth',block:'start'});return v;}catch(e){if(bench===active){bench.saving=false;lockBench(false);button.disabled=bench.loading;}toast(e.message);throw e;}
 }
 function ensureCesium(){if(window.Cesium)return Promise.resolve();return new Promise((resolve,reject)=>{const css=document.createElement('link');css.rel='stylesheet';css.href='https://cesium.com/downloads/cesiumjs/releases/1.142/Build/Cesium/Widgets/widgets.css';document.head.append(css);const script=document.createElement('script');script.src='https://cesium.com/downloads/cesiumjs/releases/1.142/Build/Cesium/Cesium.js';script.onload=resolve;script.onerror=()=>reject(Error('지도 렌더러 연결 실패. 초안과 입체 모형은 유지됩니다.'));document.head.append(script);});}
+async function previewImages(images){
+ const out={};for(const [side,url] of Object.entries(images||{})){const u=new URL(url,location.origin);if(u.origin!==location.origin||!/^\/api\/console\/proposal-images\/[a-f0-9-]{36}(?:\/(?:front|left|right|back))?$/.test(u.pathname))throw Error('현재 수정안의 이미지만 미리볼 수 있습니다.');const response=await fetch(u.href,{credentials:'same-origin'});if(!response.ok)throw Error('초안 이미지를 불러오지 못했습니다.');const blob=await response.blob();if(blob.size>4_800_000||!['image/png','image/jpeg'].includes(blob.type))throw Error('미리보기 이미지 규격을 확인하세요.');out[side]=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('이미지 미리보기 변환 실패'));reader.readAsDataURL(blob);});}return out;
+}
 async function previewSavedProposal(p){
  const r=detail.report,st=connectedStation(r.station_key);if(!p||!st)throw Error('저장된 수정안과 연결된 지도를 확인해 주세요.');
+ const preview=p.image?await previewImages(p.images||{front:p.image}):{};
  const id=r.id,slots=p.kind==='facade'?(await api('/api/console/station?key='+encodeURIComponent(r.station_key))).slots:[],slot=slots.find(s=>s.alias===p.target.alias),geometry=p.target.structure;
  if(detail.report.id!==id)return;
  $('#map3dCard').hidden=false;$('#map3dTitle').textContent='저장된 수정안 · 읽기 전용';$('#map3dNote').textContent='지도 클릭은 수정안을 바꾸지 않습니다. 변경할 점은 에비에게 대화로 요청하세요.';
  $('#floor').innerHTML=st.floors.map(f=>'<option>'+f+'</option>').join('');if(st.id!=='S202103')await ensureCesium();
  scene||=await createScene(()=>{},{labels:{loading:'수정안 배치 지도 연결 중…',ready:'저장된 수정안 · 최종 승인 전 · 읽기 전용'}});
- const assets=(p.target.effects||[]).filter(e=>e.collection==='assets').map(e=>({...e.after,...(e.action==='create'?{facades:p.images||{front:p.image}}:{})}));
- const project={schema_version:1,site_id:st.id,station:{...st,default_floor:r.floor},name:st.name,source:st.id==='S202103'?'seoul-snapshot':'vworld',tileset_url:'',assets,points:[],connections:[],routes:[],observations:[],overlays:slot?[{...slot,image:p.image}]:[]};
+ const assets=(p.target.effects||[]).filter(e=>e.collection==='assets').map(e=>({...e.after,...(e.action==='create'?{facades:preview}:{})}));
+ const project={schema_version:1,site_id:st.id,station:{...st,default_floor:r.floor},name:st.name,source:st.id==='S202103'?'seoul-snapshot':'vworld',tileset_url:'',assets,points:[],connections:[],routes:[],observations:[],overlays:slot?[{...slot,image:preview.front}]:[]};
  if(scene.stationId!==st.id){await scene.connect(project);scene.stationId=st.id;}else scene.render(project);scene.setFloor(r.floor);scene.setGrid(false);
  const pos=geometry?.position||slot?.position||r.position;if(slot)scene.focusFacade({floor:slot.floor,longitude:pos[0],latitude:pos[1],height:pos[2],cameraHeading:slot.heading,surfaceWidth:slot.surface?.[0],surfaceHeight:slot.surface?.[1],label:slot.name,imageId:slot.alias});else scene.focus(pos);
- if(slot)scene.previewFacade(slot.alias,p.image);$('#map3dCard').scrollIntoView({behavior:'smooth',block:'nearest'});
+ if(slot)scene.previewFacade(slot.alias,preview.front);$('#map3dCard').scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 // 3D preview on the Seoul scene (service bridge): fly to the slot's front and show the rectified image there.
 async function preview3d(){

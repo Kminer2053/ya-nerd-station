@@ -20,6 +20,7 @@ globalThis.fetch=async url=>{
  const path=String(url);
  if(path.endsWith('/approved-facades.json'))return new Response(JSON.stringify({replacements:[{is_active:true,image_url:'/fixture.png',replacement_width_px:64,replacement_height_px:32,current_store_name:'검증 매장',slot:{slot_alias:'TEST-S01',floor:'2F',longitude:position[0],latitude:position[1],height_m:position[2],camera_heading_deg:90,surface_width_m:2,surface_height_m:1}}]}));
  if(path.endsWith('/catalog.json'))return new Response(JSON.stringify({facilities:[],endpoints:[]}));
+ if(path.endsWith('/fixture.png'))return new Response(photo,{headers:{'Content-Type':'image/png'}});
  networkAttempts++;throw Error('External network is forbidden in Dots fixture');
 };
 const width=800,height=480,pixels=new Uint8Array(width*height*4);
@@ -86,7 +87,7 @@ try{
  const discover=await rpc('server/discover',{supportedVersions:['2026-07-28']});
  assert.equal(discover.status,200);assert(discover.payload.result.supportedVersions.includes('2026-07-28'));
  const listed=await rpc('tools/list'),names=listed.payload.result.tools.map(item=>item.name).sort();
- assert.deepEqual(names,['toolkit_connect_agent','toolkit_connection_status','toolkit_list_work','toolkit_read_photo','toolkit_read_work','toolkit_read_conversation','toolkit_send_message','toolkit_read_file','toolkit_request_info','toolkit_submit_plan'].sort());
+ assert.deepEqual(names,['toolkit_connect_agent','toolkit_connection_status','toolkit_list_work','toolkit_read_photo','toolkit_read_photo_original','toolkit_read_facade_reference','toolkit_store_draft_artifact','toolkit_read_work','toolkit_read_conversation','toolkit_send_message','toolkit_read_file','toolkit_request_info','toolkit_submit_plan'].sort());
  assert(names.every(name=>!/(approve|ready|publish|create_work|create_queue)/.test(name)),'MCP must only expose connection/read/plan/info operations');
  denied(await tool('toolkit_list_work',{},undefined));
  denied(await rpc('tools/call',{name:'toolkit_connection_status',arguments:{}},{extra:{'oai-authenticated-user-email':'sites-test-dot-a@example.test'}}));
@@ -153,6 +154,32 @@ try{
  denied(await tool('toolkit_submit_plan',{job_id:ownJob.id,plan:{...valid,summary:'충돌하는 변경 계획'}}));
  assert.equal(proposalCount(own.id),1);assert.deepEqual(layer(),{});
  for(const name of ['toolkit_approve','toolkit_ready','toolkit_create_work'])denied(await tool(name,{job_id:ownJob.id}));
+
+ // Generated images use the same assigned-job scope and final-approval boundary.
+ const artwork=seed(),parts=[{id:'body',type:'box',offset:[0,0,0],size:[1.2,.6,1.6],color:'#cccccc',facades:{}},{id:'raised-sign',type:'plane',vertices:[[-.6,-.31,1.6],[.6,-.31,1.6],[.6,-.31,2],[-.6,-.31,2]],texture:'front',uv:[[0,0],[1,0],[1,.2],[0,.2]]}];
+ // Keep all vertices inside the declared envelope.
+ parts[1].vertices=parts[1].vertices.map(([x,y,z])=>[x,-.3,z]);
+ const artJob=await createWork(artwork,jarA,'dots',{structure:{...structure,parts}});
+ const reference=await tool('toolkit_read_facade_reference',{job_id:artJob.id,alias:'TEST-S01'});assert(!isDenied(reference));assert(reference.payload.result.content.some(c=>c.type==='image'));denied(await tool('toolkit_read_facade_reference',{job_id:artJob.id,alias:'FOREIGN'}));
+ const original=await tool('toolkit_read_photo_original',{job_id:artJob.id,photo_id:artwork.ids[0]});assert(!isDenied(original));
+ const originalData=JSON.parse(original.payload.result.content.find(c=>c.type==='text').text);assert.equal(originalData.original,true);assert.equal(originalData.source_width,width);assert.match(originalData.sha256,/^[a-f0-9]{64}$/);
+ const outputPixels=new Uint8Array(614*1024*4);for(let i=0;i<outputPixels.length;i+=4)outputPixels.set([25,60,80,255],i);
+ const generated=encode({width:614,height:1024,data:outputPixels,channels:4,depth:8}),artifactInput={job_id:artJob.id,request_id:crypto.randomUUID(),source_photo_ids:[artwork.ids[0]],image:'data:image/png;base64,'+Buffer.from(generated).toString('base64'),provenance:{method:'generated',evidence:'실제 촬영사진을 기준으로 간판과 전면을 보정함',uncertainty:'가림 영역은 추정이며 실측 형상으로 확정하지 않음',privacy_reviewed:true}};
+ denied(await tool('toolkit_store_draft_artifact',{...artifactInput,source_photo_ids:[foreign.ids[0]]}));
+ denied(await tool('toolkit_store_draft_artifact',{...artifactInput,provenance:{...artifactInput.provenance,privacy_reviewed:false}}));
+ denied(await tool('toolkit_store_draft_artifact',artifactInput,principalB));
+ const huge=generated.slice(),hugeView=new DataView(huge.buffer);hugeView.setUint32(16,4096);hugeView.setUint32(20,4096);denied(await tool('toolkit_store_draft_artifact',{...artifactInput,image:'data:image/png;base64,'+Buffer.from(huge).toString('base64')}));
+ const beforeArtifacts=files.size,uploads=await Promise.all([tool('toolkit_store_draft_artifact',artifactInput),tool('toolkit_store_draft_artifact',artifactInput)]),stored=data(uploads[0]);assert.equal(data(uploads[1]).artifact_id,stored.artifact_id);assert.equal(files.size,beforeArtifacts+1,'Concurrent retries preserve one immutable image object');
+ assert.deepEqual(stored.px,[614,1024]);assert.match(stored.sha256,/^[a-f0-9]{64}$/);assert(!JSON.stringify(stored).includes('base64'));
+ const storedRow=db.prepare('SELECT * FROM job_artifacts WHERE id=?').get(stored.artifact_id);assert(files.has(storedRow.storage_key));
+ denied(await tool('toolkit_store_draft_artifact',{...artifactInput,provenance:{...artifactInput.provenance,evidence:'같은 ID의 다른 출처'}}));assert(files.has(storedRow.storage_key),'Conflicting retry cannot remove the winning object');
+ const genPlan={...plan(artwork.ids),faces:[{side:'front',artifact_id:stored.artifact_id},plan(artwork.ids).faces[1]]};
+ data(await tool('toolkit_submit_plan',{job_id:artJob.id,plan:genPlan}));const artDraft=job(artJob.id),artProposal=db.prepare('SELECT * FROM proposals WHERE id=?').get(artDraft.proposal_id);assert.equal(artDraft.status,'draft');assert.deepEqual(JSON.parse(artProposal.target).structure.parts,parts);assert.equal(JSON.parse(artProposal.meta).faces.front.sha256,stored.sha256);assert.deepEqual(layer(),{});assert.equal((await call('/api/public/proposal-images/'+artProposal.id)).status,404);
+ assert.equal((await call('/api/console/proposals/'+artProposal.id+'/approve',{method:'POST',jar:jarA,body:{confirm:true,geometry_checked:true,privacy_checked:true,preview_checked:true,effects_checked:true}})).status,200);
+ const appliedArt=layer().assets['structure-'+artProposal.id];assert.deepEqual(appliedArt.parts,parts);assert.equal((await call('/api/public/proposal-images/'+artProposal.id)).status,200);
+ // Restore only this fixture's layer so the existing isolation checks remain exact.
+ db.prepare('DELETE FROM station_layers WHERE station_key=?').run(station);
+
 
  // Dots may propose geometry only after a human grants the narrow estimate opt-in.
  const estimated=seed(),estimateJob=await createWork(estimated,jarA,'dots',{structure:null,allow_estimate:true}),estimatedGeometry={...structure,dimension_basis:'estimated'},estimateBasis={evidence:'사진의 문과 옆 구조물을 비교한 치수·방향 제안',uncertainty:'원근 때문에 오차가 있으며 실제 치수와 방향 확인 필요'},estimatePlan={...plan(estimated.ids),structure:estimatedGeometry,structure_provenance:estimateBasis};
