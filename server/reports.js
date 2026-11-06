@@ -124,6 +124,12 @@ export async function reportsApi(request,env,ctx,{json,bytes,digest}){
  if(me.approver&&!activeApprover(env,me.approver))me.approver=null;
  if(p==='/api/session')return json({user_id:me.user,approver:me.approver,local:me.local,approvers_configured:approvers(env).size>0});
  if(!env.DB)return json({error:'제보 저장소 연결을 확인하세요.'},503);
+ // Public map layers are also read by the station service on another origin.
+ // Signed browser requests preflight these GETs; never apply this to private routes.
+ if(method==='OPTIONS'&&p.startsWith('/api/public/')){
+  if((request.headers.get('Access-Control-Request-Method')||'GET')!=='GET')return json({error:'공개 조회만 허용됩니다.'},405);
+  return new Response(null,{status:204,headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,OPTIONS','Access-Control-Allow-Headers':'Content-Type,Signature,Signature-Agent,Signature-Input','Access-Control-Max-Age':'600','Vary':'Access-Control-Request-Headers'}});
+ }
  const db=env.DB,writing=!['GET','HEAD'].includes(method),now=new Date().toISOString();
  if(writing&&request.headers.get('Origin')!==u.origin)return json({error:'같은 사이트에서 보내 주세요.'},403);
  const token=cookie(request,'nerd-reporter','[a-f0-9-]{36}'),reporter=token?await digest('reporter:'+token):null;

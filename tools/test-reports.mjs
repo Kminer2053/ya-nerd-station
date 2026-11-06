@@ -35,7 +35,7 @@ const dataUrl=a=>'data:image/png;base64,'+Buffer.from(a).toString('base64');
 const jpeg=(w,h)=>new Uint8Array([255,216,255,192,0,17,8,h>>8,h&255,w>>8,w&255,3,1,34,0,2,17,1,3,17,1,255,217]);
 const jpegUrl=a=>'data:image/jpeg;base64,'+Buffer.from(a).toString('base64');
 let cookie='';
-const call=(path,{method='GET',body,raw,type,user,ip,jar=cookie,origin='http://toolkit.test',e=env}={})=>server.fetch(new Request('http://toolkit.test'+path,{method,headers:{Origin:origin,...(jar?{Cookie:jar}:{}),...(user?{'oai-authenticated-user-id':user}:{}),...(ip?{'CF-Connecting-IP':ip}:{}),...(raw?{'Content-Type':type||'image/png'}:body?{'Content-Type':'application/json'}:{})},...(raw?{body:raw}:body?{body:JSON.stringify(body)}:{})}),e);
+const call=(path,{method='GET',body,raw,type,user,ip,jar=cookie,origin='http://toolkit.test',e=env,headers={}}={})=>server.fetch(new Request('http://toolkit.test'+path,{method,headers:{Origin:origin,...(jar?{Cookie:jar}:{}),...(user?{'oai-authenticated-user-id':user}:{}),...(ip?{'CF-Connecting-IP':ip}:{}),...(raw?{'Content-Type':type||'image/png'}:body?{'Content-Type':'application/json'}:{}),...headers},...(raw?{body:raw}:body?{body:JSON.stringify(body)}:{})}),e);
 const report=(o={})=>({station:'S202103',floor:'2F',position:[S25[0],S25[1]+.00003,36.2],view:{heading:180,pitch:-20},type:'facade',description:'지도엔 토니모리인데 지금은 위니비니예요',consent:true,...o});
 
 // Input rules
@@ -50,6 +50,22 @@ assert.equal(validateReportInput({station:'S201807',type:'new',consent:true,floo
 assert.equal(nearest([{floor:'2F',position:S25,heading:358.8}],[S25[0],S25[1]+.00003,36.2],'2F',12,180).distance<5,true,'facing slot matched');
 assert(nearest([{floor:'2F',position:S25,heading:358.8}],[S25[0],S25[1]+.00003,36.2],'2F',12,0).distance>4,'looking away from the face costs 4 m');
 assert.equal(ruleConfidence({slotDistance:3,duplicates:1,photos:2}),.8);
+
+// The station service's signed cross-origin GETs preflight public map data.
+// CORS never grants credentials, private reads, or public/private mutations.
+const publicOrigin='https://station-service.test',missingId='00000000-0000-4000-8000-000000000000';
+const preflight=(path,method='GET')=>call(path,{method:'OPTIONS',jar:'',origin:publicOrigin,headers:{'Access-Control-Request-Method':method,'Access-Control-Request-Headers':'content-type, signature, signature-agent, signature-input'}});
+const headerList=(response,name)=>(response.headers.get(name)||'').toLowerCase().split(',').map(s=>s.trim());
+for(const path of ['/api/public/stations','/api/public/station?key=S202103','/api/public/proposal-images/'+missingId]){
+ const response=await preflight(path);assert.equal(response.status,204,path+' public GET preflight');assert.equal(await response.text(),'');assert.equal(response.headers.get('Access-Control-Allow-Origin'),'*');assert.deepEqual(headerList(response,'Access-Control-Allow-Methods'),['get','options']);assert.deepEqual(headerList(response,'Access-Control-Allow-Headers'),['content-type','signature','signature-agent','signature-input']);assert.equal(response.headers.get('Access-Control-Allow-Credentials'),null);assert.equal(response.headers.get('Access-Control-Max-Age'),'600');
+ for(const method of ['POST','PUT','PATCH','DELETE']){const rejected=await preflight(path,method);assert.equal(rejected.status,405,path+' '+method+' preflight stays blocked');assert.equal(rejected.headers.get('Access-Control-Allow-Origin'),null);}
+}
+for(const path of ['/api/console/reports','/api/console/dots-link','/api/console/agent-runners','/api/console/proposal-images/'+missingId,'/api/reports/mine','/api/reports/photos/'+missingId]){
+ for(const method of ['GET','POST']){const response=await preflight(path,method);assert.equal(response.status,403,path+' private preflight stays blocked');assert.equal(response.headers.get('Access-Control-Allow-Origin'),null);assert.equal(response.headers.get('Access-Control-Allow-Methods'),null);}
+}
+const sessionPreflight=await preflight('/api/session');assert.equal(sessionPreflight.headers.get('Access-Control-Allow-Origin'),null,'session response is never cross-origin readable');
+for(const path of ['/api/public/stations','/api/public/station?key=S202103']){const response=await call(path,{jar:'',origin:publicOrigin,headers:{Signature:'synthetic-signature','Signature-Agent':'"https://synthetic.test/agent"','Signature-Input':'synthetic-input'}});assert.equal(response.status,200);assert.equal(response.headers.get('Access-Control-Allow-Origin'),'*','actual public GET retains CORS');assert.equal(response.headers.get('Access-Control-Allow-Credentials'),null);}
+const publicWrite=await call('/api/public/station?key=S202103',{method:'POST',jar:'',origin:publicOrigin,body:{}});assert.equal(publicWrite.status,403,'preflight does not authorize a public write');assert.equal(publicWrite.headers.get('Access-Control-Allow-Origin'),null);assert.equal(db.prepare('SELECT count(*) AS n FROM reports').get().n,0,'preflight/public reads have no report side effects');
 
 // Report → photos → submit (rules analysis: slot, facility, confidence)
 assert.equal((await call('/api/reports',{method:'POST',body:report(),origin:'http://evil.test'})).status,403,'same-site writes only');
