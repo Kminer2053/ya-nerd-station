@@ -29,13 +29,14 @@
     <div class="words-col"><label for="description">자세히 적기 <small>(선택)</small></label><textarea id="description" rows="5" maxlength="500" placeholder="예: 지도엔 토니모리인데 지금은 위니비니예요"></textarea><p id="descCount" class="fine"></p></div>
    </div>
    <label class="consent"><input id="consent" type="checkbox"> 사진과 내용을 역 지도 개선에 쓰며, AI 연결 시 외부 AI 서비스로 사진을 보내 분석하는 것에 동의해요.</label>
-   <p class="fine">적은 내용은 공개 제보함에서 누구나 볼 수 있어요. 사진 원본은 승인자만 보고, 공개 화면에는 알아볼 수 없게 흐린 사진만 보여요.</p></section>
-  <section data-panel="done" hidden><h3>제보가 접수됐어요</h3><p id="doneText"></p><div class="done-actions"><button type="button" id="doneMine" class="primary">내 제보 보기</button><button type="button" id="doneMore">계속 둘러보기</button></div></section>
+   <p class="fine">적은 내용은 공개 제보함에서 누구나 볼 수 있어요. 사진 원본은 승인자만 보고, 공개 화면에는 알아볼 수 없게 흐린 사진만 보여요.</p>
+   <p class="browser-notice"><strong>나중에도 같은 브라우저·프로필로 확인해 주세요.</strong><span>‘내 제보’는 로그인 없이 이 브라우저의 쿠키로 찾아요. 쿠키·사이트 데이터를 지우거나 시크릿 모드를 종료하면 이전 제보를 찾지 못할 수 있어요. 다른 브라우저·기기에는 자동으로 연결되지 않아요.</span></p></section>
+  <section data-panel="done" hidden><h3>제보가 접수됐어요</h3><p id="doneText"></p><p class="browser-notice"><strong>이 브라우저의 ‘내 제보’에서 접수 상태를 확인해 보세요.</strong><span>쿠키·사이트 데이터를 지우거나 시크릿 모드를 종료하면 ‘내 제보’ 연결이 끊길 수 있어요. 다른 브라우저·기기에는 자동으로 연결되지 않지만, 접수된 제보는 서버에 남아요.</span></p><div class="done-actions"><button type="button" id="doneMine" class="primary">내 제보 보기</button><button type="button" id="doneMore">계속 둘러보기</button></div></section>
   <p id="sheetError" class="error" role="alert"></p>
  </div>
  <footer class="sheet-foot"><button type="button" id="prevStep">이전</button><button type="button" id="nextStep" class="primary">다음</button></footer>
 </form></dialog>
-<dialog id="mine" aria-labelledby="mineTitle"><header class="sheet-head"><h3 id="mineTitle">내 제보</h3><button type="button" id="closeMine" class="x" aria-label="닫기">×</button></header><div id="mineList" class="mine-list"></div></dialog>
+<dialog id="mine" aria-labelledby="mineTitle" aria-describedby="mineHint"><header class="sheet-head"><h3 id="mineTitle">내 제보</h3><button type="button" id="closeMine" class="x" aria-label="닫기">×</button></header><div class="mine-body"><p id="mineHint" class="browser-notice"><strong>이 브라우저에서 보낸 제보를 보여드려요.</strong><span>로그인 없이 같은 브라우저·프로필의 쿠키로 확인해요. 다른 브라우저·기기에는 자동으로 연결되지 않아요.</span><span>쿠키·사이트 데이터를 지우거나 시크릿 모드를 종료하면 이전 제보를 찾지 못할 수 있어요. 목록에서 보이지 않아도 접수된 제보는 서버에 남아요.</span></p><div id="mineList" class="mine-list"></div></div></dialog>
 <div id="toast" role="status" aria-live="polite"></div>
 <script type="module" src="/src/public/app.js"></script>
 </body></html>

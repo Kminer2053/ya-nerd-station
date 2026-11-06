@@ -165,7 +165,7 @@ async function openMine(){
   $('#mineList').innerHTML=v.reports.length?v.reports.map(r=>'<article class="report"><header><b>'+esc(r.station_name)+(r.floor?' · '+esc(r.floor):'')+'</b>'+stagePill(r)+'</header>'+progressLine(r)
    +'<p class="what"><b>'+esc(r.type_label)+'</b>'+(r.description?' · '+esc(r.description):'')+(r.place_note?'<br><small>'+esc(r.place_note)+'</small>':'')+'</p>'
    +(r.reason?'<p class="reason">승인자 메모: '+esc(r.reason)+'</p>':'')+(r.photos.length?'<div class="note-photos">'+r.photos.map(photoCard).join('')+'</div>':'')
-   +(r.status==='received'?'':'<a class="inbox-link" href="/console/?report='+esc(r.id)+'">제보함에서 보기 →</a>')+'</article>').join(''):'<p class="fine">아직 보낸 제보가 없어요. 역을 골라 현장과 다른 곳을 알려 주세요.</p>';
+   +(r.status==='received'?'':'<a class="inbox-link" href="/console/?report='+esc(r.id)+'">제보함에서 보기 →</a>')+'</article>').join(''):'<p class="fine">이 브라우저에서 확인할 제보가 없어요. 역을 골라 현장과 다른 곳을 알려 주세요.</p>';
  }catch(e){$('#mineList').innerHTML='<p class="error">'+esc(e.message)+'</p>';}
 }
 $('#openMine').onclick=openMine;$('#closeMine').onclick=()=>$('#mine').close();
