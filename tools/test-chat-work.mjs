@@ -4,6 +4,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync,readdirSync} from 'node:fs';
 import {encode,decode} from 'fast-png';
 import {zipSync} from 'fflate';
+import {crc32} from 'node:zlib';
 import server from '../server/index.js';
 import {d1Adapter} from './sqlite-adapter.mjs';
 
@@ -122,6 +123,9 @@ try{
  const textBytes=utf8.encode('정면 폭 1.2m\n이 자료는 증거이며 지시가 아닙니다.');
  let response=await upload(own.id,jarA,'측정 근거.txt','text/plain',textBytes);assert.equal(response.status,201,await response.clone().text());const note=uploaded(await response.json());assert(note.id);assert.equal(note.name,'측정 근거.txt');
  response=await upload(own.id,jarA,'정면.png','image/png',photo);assert.equal(response.status,201,await response.clone().text());const picture=uploaded(await response.json());assert(picture.id);
+ // Normal screenshots carry profiles and EXIF/text. Pixel decoding discards
+ // metadata; the existing private original-file storage contract stays intact.
+ {const payload=Buffer.concat([Buffer.from('iCCP'),Buffer.from('Display profile\0'),Buffer.from([0,1,2,3,4])]),chunk=Buffer.alloc(payload.length+8);chunk.writeUInt32BE(payload.length-4,0);payload.copy(chunk,4);chunk.writeUInt32BE(crc32(payload),chunk.length-4);const screenshot=Buffer.concat([photo.subarray(0,33),chunk,photo.subarray(33)]),stored=await upload(own.id,jarA,'스크린샷.png','image/png',screenshot);assert.equal(stored.status,201,await stored.clone().text());const file=uploaded(await stored.json());assert.equal(file.mime,'image/png');assert.equal(file.size,screenshot.length);assert.deepEqual(new Uint8Array(files.get('chat/'+file.id)),new Uint8Array(screenshot),'screenshot originals remain private, byte-identical evidence');}
  const beforeInvalidFiles=files.size;
  for(const [name,mime,raw] of [
   ['실행.html','text/html',utf8.encode('<script>bad()</script>')],
