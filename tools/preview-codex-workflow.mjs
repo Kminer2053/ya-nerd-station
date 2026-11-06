@@ -21,6 +21,7 @@ const actor='로컬 검증 승인자',password=randomBytes(18).toString('base64u
 const operatorToken=randomBytes(32).toString('hex');
 const files=new Map(),servers=[],vites=[];
 const db=new DatabaseSync(':memory:');
+const serviceDb=new DatabaseSync(':memory:');
 let closing=false;
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json;charset=utf-8','Cache-Control':'no-store'}});
 const secretEqual=(a,b)=>{const x=Buffer.from(a||''),y=Buffer.from(b);return x.length===y.length&&timingSafeEqual(x,y);};
@@ -30,7 +31,7 @@ async function close(){
  if(closing)return;closing=true;
  for(const server of servers)await new Promise(resolve=>{server.close(resolve);server.closeAllConnections?.();});
  for(const vite of vites)await vite.close();
- db.close();globalThis.fetch=nativeFetch;
+ db.close();serviceDb.close();globalThis.fetch=nativeFetch;
  await rm(temporary,{recursive:true,force:true});
 }
 
@@ -73,9 +74,12 @@ async function send(response,result){response.writeHead(result.status,Object.fro
 
 try{
  const fixture=await seed();
+ // Commons uses its own disposable database; editor rows and production
+ // credentials never enter the room/game runtime.
+ for(const file of (await readdir(path.join(serviceRoot,'drizzle'))).filter(f=>f.endsWith('.sql')).sort())serviceDb.exec(await readFile(path.join(serviceRoot,'drizzle',file),'utf8'));
  const env={DB:d1Adapter(db),LOCAL_PREVIEW:true,LOCAL_SERVICE_ORIGIN:serviceOrigin,APPROVERS:actor+':'+password,
   UPLOADS:{async put(key,value){files.set(key,new Uint8Array(value));},async get(key){return files.has(key)?{body:files.get(key)}:null;},async delete(key){files.delete(key);}}};
- const serviceEnv={LOCAL_PREVIEW:true,ASSETS:{fetch:assets}};
+ const serviceEnv={LOCAL_PREVIEW:true,DB:d1Adapter(serviceDb),ASSETS:{fetch:assets}};
  // Fixture storage stays local. The map-source relay may read only the same
  // public VWorld tiles used by the browser; model APIs and production storage
  // remain blocked.
@@ -103,9 +107,11 @@ try{
     }
     if(url.pathname.startsWith('/api/')||url.pathname==='/mcp'){
      if(!isEditor){
-      if(request.method!=='GET'||!['/api/toolkit/seoul','/api/session','/api/catalog'].includes(url.pathname)){await send(response,json({error:'이 미리보기는 확정 자료 조회만 허용합니다.'},404));return;}
-      const {api}=await serviceVite.ssrLoadModule('/server/api.js');
-      await send(response,await api(toRequest(request,origin),serviceEnv));return;
+      const reading=request.method==='GET'&&['/api/toolkit/seoul','/api/session','/api/catalog'].includes(url.pathname);
+      const roomAction=request.method==='POST'&&/^\/api\/commons\/(?:join|sync|leave)$/.test(url.pathname);
+      if(!reading&&!roomAction){await send(response,json({error:'로컬 지도 조회와 메모리 공유방 시험만 허용합니다.'},404));return;}
+      const module=await serviceVite.ssrLoadModule('/server/index.js');
+      await send(response,await module.default.fetch(toRequest(request,origin),serviceEnv));return;
      }
      const input=toRequest(request,origin);
      // A development-only principal is supplied only after a private, per-run bearer check.
@@ -124,6 +130,7 @@ try{
  }
  console.log('편집기 로컬 검증(시험 승인자): '+editorOrigin+'/__fixture/open');
  console.log('서울역 미리보기: '+serviceOrigin+'/app/?site=S202103&toolkit=1&toolkitOrigin='+encodeURIComponent(editorOrigin));
+ console.log('게임 미리보기: '+serviceOrigin+'/commons/');
  console.log('시험 제보 ID: '+fixture.reportId);
  console.log('시험 자격증명 파일(외부 공유 금지): '+credentialsPath);
  console.log('D1/R2는 메모리에만 있습니다. VWorld 원본 지도 조회만 허용하며 외부 AI·운영 저장소는 차단합니다. Ctrl+C로 종료합니다.');
