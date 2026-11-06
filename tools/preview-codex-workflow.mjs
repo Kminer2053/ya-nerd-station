@@ -17,7 +17,10 @@ const host='127.0.0.1',editorPort=4197,servicePort=4210;
 const editorOrigin=`http://${host}:${editorPort}`,serviceOrigin=`http://${host}:${servicePort}`;
 const temporary=await mkdtemp(path.join(tmpdir(),'station-photo-workflow-'));
 const credentialsPath=path.join(temporary,'local-credentials.json');
-const actor='로컬 검증 승인자',password=randomBytes(18).toString('base64url'),bearer=randomBytes(32).toString('base64url'),principal='local-photo-fixture';
+const configuredApprovers=await readFile(path.join(root,'data-private/local-approvers.txt'),'utf8').then(value=>value.trim()).catch(error=>{if(error.code==='ENOENT')return '';throw error;});
+const localAccounts=configuredApprovers.split(/[,\n]/).filter(line=>line.trim()).map(line=>{const split=line.indexOf(':');return {name:line.slice(0,split).trim(),password:line.slice(split+1).trim(),valid:split>0};});
+if(localAccounts.some(account=>!account.valid||!account.name||account.name.length>40||account.password.length<8))throw Error('data-private/local-approvers.txt의 이름:비밀번호 형식을 확인하세요. 비밀번호는 8자 이상이어야 합니다.');
+const actor=localAccounts[0]?.name||'로컬 검증 승인자',password=localAccounts[0]?.password||randomBytes(18).toString('base64url'),bearer=randomBytes(32).toString('base64url'),principal='local-photo-fixture';
 const operatorToken=randomBytes(32).toString('hex');
 const files=new Map(),servers=[],vites=[];
 const db=new DatabaseSync(':memory:');
@@ -77,7 +80,7 @@ try{
  // Commons uses its own disposable database; editor rows and production
  // credentials never enter the room/game runtime.
  for(const file of (await readdir(path.join(serviceRoot,'drizzle'))).filter(f=>f.endsWith('.sql')).sort())serviceDb.exec(await readFile(path.join(serviceRoot,'drizzle',file),'utf8'));
- const env={DB:d1Adapter(db),LOCAL_PREVIEW:true,LOCAL_SERVICE_ORIGIN:serviceOrigin,APPROVERS:actor+':'+password,
+ const env={DB:d1Adapter(db),LOCAL_PREVIEW:true,LOCAL_SERVICE_ORIGIN:serviceOrigin,APPROVERS:configuredApprovers||actor+':'+password,
   UPLOADS:{async put(key,value){files.set(key,new Uint8Array(value));},async get(key){return files.has(key)?{body:files.get(key)}:null;},async delete(key){files.delete(key);}}};
  const serviceEnv={LOCAL_PREVIEW:true,DB:d1Adapter(serviceDb),ASSETS:{fetch:assets}};
  // Fixture storage stays local. The map-source relay may read only the same
