@@ -10,7 +10,7 @@ export async function createScene(onPick,{labels={}}={}){
  const host=document.querySelector('#map'),status=document.querySelector('#sceneStatus');host.innerHTML='<div id="nativeMap" style="position:absolute;inset:0"></div>';
  const nativeHost=document.querySelector('#nativeMap'),base=seoulOrigin(),images=createPreviewImages({origin:location.origin});
  let native=null,nativePromise=null,project=null,selected=null,frame=null,ready=false,documentReady=false,isSeoul=false,disposed=false,connectedStation=null,renderedFloor=null,floor='2F',grid=true,epoch=0,renderVersion=0,renderQueued=false,renderAbort=null,documentTimer=null,readyTimer=null,sentFloor=null,sentGrid=null,controls=null;
- const pending=new Map();
+ const pending=new Map(),recentView=new Map();
  const captures=new Map();
  function setStatus(phase,text,retry=false){
   if(disposed)return;status.textContent=text;status.dataset&&(status.dataset.mapState=phase);if(controls){controls.hidden=!retry;controls.style.display=retry?'flex':'none';const link=controls.querySelector('a');link.hidden=!isSeoul;link.href=frame?.src||base+'/app/?site=S202103';}
@@ -20,7 +20,9 @@ export async function createScene(onPick,{labels={}}={}){
   }
  }
  const clearTimers=()=>{clearTimeout(documentTimer);clearTimeout(readyTimer);documentTimer=readyTimer=null;};
- function removeFrame(){clearTimers();ready=documentReady=false;renderedFloor=null;sentFloor=sentGrid=null;renderAbort?.abort();renderAbort=null;renderVersion++;frame?.remove();frame=null;pending.clear();for(const c of captures.values()){clearTimeout(c.timer);c.reject(Error('지도 연결이 바뀌었습니다. 배치를 확인한 뒤 다시 캡처하세요.'));}captures.clear();}
+ function removeFrame(replay=false){clearTimers();ready=documentReady=false;renderedFloor=null;sentFloor=sentGrid=null;renderAbort?.abort();renderAbort=null;renderVersion++;frame?.remove();frame=null;pending.clear();if(replay)for(const [key,message]of recentView)pending.set(key,message);for(const c of captures.values()){clearTimeout(c.timer);c.reject(Error('지도 연결이 바뀌었습니다. 배치를 확인한 뒤 다시 캡처하세요.'));}captures.clear();}
+ function resetView(){pending.clear();recentView.clear();images.clear();if(isSeoul&&frame)pending.set('facade',{action:'facade-preview',data:{imageUrl:null}});}
+ function clearFacade(){pending.set('facade',{action:'facade-preview',data:{imageUrl:null}});recentView.delete('facade');}
  const post=(action,data={})=>{if(ready&&frame)frame.contentWindow.postMessage({channel:'station-toolkit',action,...data},base);};
  function scheduleRender(){
   if(disposed||!isSeoul||!project||!ready||renderQueued)return;
@@ -34,9 +36,9 @@ export async function createScene(onPick,{labels={}}={}){
    }).catch(error=>{if(error.name!=='AbortError'&&version===renderVersion)setStatus('failed',error.message,true);});
   });
  }
- const queue=(key,action,data={})=>{pending.set(key,{action,data});scheduleRender();};
- function openFrame(){
-  removeFrame();nativeHost.hidden=true;
+ const queue=(key,action,data={})=>{const message={action,data:structuredClone(data)};pending.set(key,message);recentView.set(key,message);scheduleRender();};
+ function openFrame(replay=false){
+  removeFrame(replay);nativeHost.hidden=true;
   const u=new URL('/app/',base);u.search=new URLSearchParams({site:'S202103',floor,embed:'catalog',toolkit:'1',toolkitOrigin:location.origin,...(base.startsWith('http:')?{scene:'local'}:{})});
   // Give the new frame its destination before insertion. Reusing an initially
   // hidden about:blank frame can leave Chrome's cross-origin navigation pending.
@@ -62,22 +64,22 @@ export async function createScene(onPick,{labels={}}={}){
  };
  addEventListener('message',onMessage);
  async function connect(p,force=false){
-  if(disposed)throw Error('닫힌 지도입니다.');const version=++epoch;project=p;const station=stationOf(p),same=connectedStation===station.id;connectedStation=station.id;
+  if(disposed)throw Error('닫힌 지도입니다.');const replay=force&&p===project&&isSeoul;if(!replay)resetView();const version=++epoch;project=p;const station=stationOf(p),same=connectedStation===station.id;connectedStation=station.id;
   if(!same||!station.floors.includes(floor))floor=p.source==='sample'?'2F':station.default_floor;document.querySelector('#floor').value=floor;
   isSeoul=p.site_id==='S202103';
-  if(isSeoul){native?.dispose();native=null;nativePromise=null;if(!frame||force)openFrame();else scheduleRender();return;}
+  if(isSeoul){native?.dispose();native=null;nativePromise=null;if(!frame||force)openFrame(replay);else scheduleRender();return;}
   if(frame)removeFrame();nativeHost.hidden=false;
   const promise=nativePromise||=createNativeScene(onPick,(...args)=>{if(!isSeoul&&!disposed)setStatus(...args);});let value;
   try{value=await promise;}catch(error){if(promise===nativePromise)nativePromise=null;if(!disposed&&!isSeoul&&version===epoch)setStatus('failed',error.message+' · 초안은 유지됩니다.',true);return;}
   if(disposed||isSeoul||promise!==nativePromise){value.dispose();return;}if(version!==epoch)return;
   native=value;await value.connect(p,{floor,force});if(!disposed&&!isSeoul&&version===epoch&&native===value)value.setGrid(grid);
  }
- return {connect,render(p){project=p;if(isSeoul)scheduleRender();else native?.render(p);},select(value){selected=value;if(isSeoul)scheduleRender();},
+ return {connect,render(p){if(p!==project)resetView();project=p;if(isSeoul)scheduleRender();else native?.render(p);},select(value){selected=value;if(isSeoul)scheduleRender();},
   async capture(){if(!isSeoul){if(!native?.capture)throw Error('지도 연결을 먼저 확인하세요.');return native.capture();}if(!ready||renderedFloor!==floor)throw Error('지도와 수정안이 표시된 뒤 캡처하세요.');if(captures.size)throw Error('캡처 처리 중입니다.');const request_id=crypto.randomUUID();return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{captures.delete(request_id);reject(Error('지도 캡처 응답이 지연됩니다. 다시 시도하세요.'));},10000);captures.set(request_id,{resolve,reject,timer});post('capture',{request_id});});},
-  setFloor(value){if(!project||!stationOf(project).floors.includes(value))return;floor=value;if(isSeoul)scheduleRender();else native?.setFloor(value);},
-  setGrid(value){grid=!!value;if(isSeoul)scheduleRender();else native?.setGrid(grid);},focus(position){if(isSeoul)queue('camera','focus',{position});else native?.focus(position);},fit(){if(isSeoul)queue('camera','fit');else native?.fit();},
-  previewFacade(slotAlias,imageUrl){if(isSeoul)queue('facade','facade-preview',{slotAlias,imageUrl});},focusFacade(value){if(isSeoul){if(stationOf(project).floors.includes(value.floor))floor=value.floor;queue('camera','facade-focus',{focus:value});}else native?.focusFacade(value);},get isSeoul(){return isSeoul;},
-  dispose(){if(disposed)return;disposed=true;epoch++;removeFrame();removeEventListener('message',onMessage);images.clear();native?.dispose();native=null;nativePromise=null;controls?.remove();controls=null;},
+  setFloor(value){if(!project||!stationOf(project).floors.includes(value))return;if(isSeoul&&value!==floor){pending.delete('camera');recentView.delete('camera');clearFacade();}floor=value;if(isSeoul)scheduleRender();else native?.setFloor(value);},
+  setGrid(value){grid=!!value;if(isSeoul)scheduleRender();else native?.setGrid(grid);},focus(position){if(isSeoul){clearFacade();queue('camera','focus',{position});}else native?.focus(position);},fit(){if(isSeoul)queue('camera','fit');else native?.fit();},
+  previewFacade(slotAlias,imageUrl){if(isSeoul){const focus=recentView.get('camera');if(focus?.action==='facade-focus'&&focus.data.focus.imageId!==slotAlias){pending.delete('camera');recentView.delete('camera');}queue('facade','facade-preview',{slotAlias,imageUrl});}},focusFacade(value){if(isSeoul){const previous=recentView.get('facade');if(previous&&previous.data.slotAlias!==value.imageId)clearFacade();if(stationOf(project).floors.includes(value.floor))floor=value.floor;queue('camera','facade-focus',{focus:value});}else native?.focusFacade(value);},get isSeoul(){return isSeoul;},
+  dispose(){if(disposed)return;disposed=true;epoch++;removeFrame();recentView.clear();removeEventListener('message',onMessage);images.clear();native?.dispose();native=null;nativePromise=null;controls?.remove();controls=null;},
  };
 }
 async function createNativeScene(onPick,setStatus){

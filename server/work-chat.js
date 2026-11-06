@@ -4,7 +4,7 @@ import {decodePhoto,aiThumbnail} from './work-images.js';
 import {unzipSync} from 'fflate';
 import {removalCandidates} from './work-plan.js';
 import {metres} from '../src/reports.js';
-import {slotScope,rebaseSlots} from './facade-slots.js';
+import {slotScope,rebaseSlots,publicSlot} from './facade-slots.js';
 const parse=(s,f=null)=>{try{return s?JSON.parse(s):f;}catch{return f;}};
 const stamp=()=>new Date().toISOString();
 const isId=s=>typeof s==='string'&&/^[a-f0-9-]{36}$/.test(s);
@@ -41,6 +41,23 @@ async function messagesContext(db,r,actor){
  const rows=(await db.prepare('SELECT role,text,attachment_ids FROM work_messages WHERE report_id=? AND actor=? ORDER BY rowid DESC LIMIT 30').bind(r,actor).all()).results.reverse();
  return {chat_context:rows.map(m=>({role:m.role,text:m.text,attachment_ids:parse(m.attachment_ids,[])})),chat_file_ids:[...new Set(rows.filter(m=>m.role==='admin').flatMap(m=>parse(m.attachment_ids,[])))].slice(-32)};
 }
+async function revisionBaseline(db,r,actor,parent){
+ if(!parent||parent.report_id!==r.id||parent.actor!==actor)return null;
+ // Copy only geometry and provenance, never private image URLs or credentials.
+ // A job's proposal pointer alone is not evidence that the actor owns that draft.
+ const snapshot=async j=>{
+  if(!j?.proposal_id)return null;
+  const p=await db.prepare('SELECT id,kind,target,meta FROM proposals WHERE id=? AND station_key=? AND report_ids=? AND reviewer=?').bind(j.proposal_id,r.station_key,JSON.stringify([r.id]),actor).first(),meta=parse(p?.meta,{}),target=parse(p?.target);
+  if(!p||meta.ai_job!==j.id||!target||typeof target!=='object'||Array.isArray(target))return null;
+  return {job_id:j.id,proposal_id:p.id,kind:p.kind,name:target.name,structure:target.structure||null,facade_alias:p.kind==='facade'?target.alias:null,slot:target.slot?publicSlot(target.slot):null,hide_ids:(target.effects||[]).filter(e=>e.action==='hide').map(e=>e.id),structure_provenance:meta.structure_provenance||null};
+ };
+ const latest=await snapshot(parent);if(latest)return latest;
+ const inherited=parse(parent.input,{})?.revision_baseline;
+ if(!inherited||!isId(inherited.job_id)||!isId(inherited.proposal_id))return null;
+ const origin=await db.prepare('SELECT * FROM report_jobs WHERE id=? AND report_id=? AND actor=?').bind(inherited.job_id,r.id,actor).first(),owned=await snapshot(origin);
+ // Questions and retries keep the original snapshot, even if draft status changes.
+ return owned?.proposal_id===inherited.proposal_id?inherited:null;
+}
 async function resumeLatest(env,r,actor){
  // Two browser tabs can append at once. Rebase on the latest message instead of
  // leaving the newly saved message attached to a cancelled/outdated child.
@@ -48,7 +65,7 @@ async function resumeLatest(env,r,actor){
  for(let attempt=0;attempt<3;attempt++){
   const j=await currentJob(db,r.id,actor),anchor=await lastAdmin(db,r.id,actor);
   if(!j||!anchor||j.report_version!==r.updated_at||!['awaiting_external','running','needs_info','draft'].includes(j.status)||parse(j.input,{}).chat_message_id===anchor.id)return;
-  const context=await messagesContext(db,r.id,actor),input={...parse(j.input,{}),...context,parent_job_id:j.id,chat_message_id:anchor.id},id=crypto.randomUUID(),at=new Date(Math.max(Date.now(),Date.parse(j.created_at)+1)).toISOString();
+  const context=await messagesContext(db,r.id,actor),input={...parse(j.input,{}),...context,parent_job_id:j.id,chat_message_id:anchor.id,revision_baseline:await revisionBaseline(db,r,actor,j)},id=crypto.randomUUID(),at=new Date(Math.max(Date.now(),Date.parse(j.created_at)+1)).toISOString();
   const out=await db.batch([
    db.prepare("INSERT INTO report_jobs (id,report_id,station_key,kind,status,report_version,actor,input,questions,created_at,updated_at) SELECT ?,?,?,?,'awaiting_external',?,?,?,'[]',?,? WHERE EXISTS (SELECT 1 FROM report_jobs WHERE id=? AND status=?) AND EXISTS (SELECT 1 FROM reports WHERE id=? AND status='accepted' AND updated_at=?) AND (SELECT id FROM work_messages WHERE report_id=? AND actor=? AND role='admin' ORDER BY rowid DESC LIMIT 1)=?").bind(id,r.id,r.station_key,j.kind,r.updated_at,actor,JSON.stringify(input),at,at,j.id,j.status,r.id,r.updated_at,r.id,actor,anchor.id),
    db.prepare("UPDATE report_jobs SET status='cancelled',updated_at=? WHERE id=? AND EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(at,j.id,id),
@@ -95,17 +112,17 @@ export async function chatConsoleApi(request,env,ctx,{json,bytes,body,me,audit,i
   if(v.confirm!==true||v.report_version!==r.updated_at)throw fail('대화로 작업을 맡길 범위를 확인하고 최신 제보에서 다시 보내세요.',409);
   if(!r.floor||!parse(r.position))throw fail('제보에 층과 지도 위치가 없습니다. 먼저 위치가 있는 제보가 필요합니다.',409);
   const link=await db.prepare('SELECT id FROM agent_links WHERE actor=? AND principal_id IS NOT NULL AND revoked_at IS NULL AND expires_at>? LIMIT 1').bind(actor,stamp()).first();
-  if(!link)throw fail('에비 연결이 없거나 만료됐습니다. 연결한 뒤 보내세요. 입력은 유지됩니다.',409);
+  if(!link)throw fail('연결 작업자가 없거나 연결이 만료됐습니다. 연결한 뒤 보내세요. 입력은 유지됩니다.',409);
   const layer=parse((await db.prepare('SELECT body FROM station_layers WHERE station_key=?').bind(r.station_key).first())?.body,{assets:{},facades:{}});
   const slots=(await stationData(env,r.station_key,fetch,slotScope(actor,r))).slots.filter(s=>s.floor===r.floor&&metres(s.position,parse(r.position))<=12);
   const prior=await currentJob(db,r.id,actor),jid=crypto.randomUUID(),at=new Date(Math.max(Date.now(),Date.parse(r.updated_at)+1,Date.parse(prior?.created_at||'')+1||0)).toISOString(),context=await messagesContext(db,r.id,actor);
-  const input={engine:'dots',kind:'conversation',allowed_kinds:['facade','structure','removal'],allow_estimate:true,structure:null,alias:null,permitted_ids:removalCandidates(layer,r).slice(0,10).map(c=>c.id),facade_aliases:slots.map(s=>s.alias),parent_job_id:prior?.id||null,chat_message_id:v.request_id,chat_context:[...context.chat_context,{role:'admin',text,attachment_ids:ids}].slice(-30),chat_file_ids:[...new Set([...context.chat_file_ids,...ids])].slice(-32)};
+  const input={engine:'dots',kind:'conversation',allowed_kinds:['facade','structure','removal'],allow_estimate:true,structure:null,alias:null,permitted_ids:removalCandidates(layer,r).slice(0,10).map(c=>c.id),facade_aliases:slots.map(s=>s.alias),parent_job_id:prior?.id||null,revision_baseline:await revisionBaseline(db,r,actor,prior),chat_message_id:v.request_id,chat_context:[...context.chat_context,{role:'admin',text,attachment_ids:ids}].slice(-30),chat_file_ids:[...new Set([...context.chat_file_ids,...ids])].slice(-32)};
   const commands=[
    db.prepare("INSERT INTO report_jobs (id,report_id,station_key,kind,status,report_version,actor,input,questions,created_at,updated_at) SELECT ?,?,?,'conversation','awaiting_external',?,?,?,'[]',?,? WHERE EXISTS (SELECT 1 FROM reports WHERE id=? AND updated_at=? AND status IN ('review','held','accepted')) AND EXISTS (SELECT 1 FROM agent_links WHERE id=? AND actor=? AND revoked_at IS NULL AND expires_at>?) AND (SELECT count(*) FROM report_jobs WHERE actor=? AND created_at>?)<240 AND NOT EXISTS (SELECT 1 FROM work_messages WHERE id=?)").bind(jid,r.id,r.station_key,at,actor,JSON.stringify(input),at,at,r.id,r.updated_at,link.id,actor,at,actor,new Date(Date.now()-864e5).toISOString(),v.request_id),
    db.prepare("INSERT INTO work_messages (id,report_id,actor,role,job_id,text,attachment_ids,created_at) SELECT ?,?,?,'admin',?,?,?,? WHERE EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(v.request_id,r.id,actor,jid,text,JSON.stringify(ids),at,jid),
    db.prepare("UPDATE report_jobs SET status='cancelled',updated_at=? WHERE report_id=? AND id<>? AND status IN ('queued','running','awaiting_external','needs_info','draft') AND EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(at,r.id,jid,jid),
    db.prepare("UPDATE proposals SET status='superseded' WHERE report_ids=? AND status IN ('draft','ready') AND EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(JSON.stringify([r.id]),jid),
-   db.prepare("UPDATE reports SET status='accepted',updated_at=?,history=json_insert(history,'$[#]',json(?)) WHERE id=? AND EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(at,JSON.stringify({status:'accepted',at,note:'에비에게 사진·대화 기반 초안 작업을 맡김 · 최종 승인은 사람'}),r.id,jid),
+   db.prepare("UPDATE reports SET status='accepted',updated_at=?,history=json_insert(history,'$[#]',json(?)) WHERE id=? AND EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(at,JSON.stringify({status:'accepted',at,note:'연결 작업자에게 사진·대화 기반 초안 작업을 맡김 · 최종 승인은 사람'}),r.id,jid),
    rebaseSlots(db,r,actor,at,'EXISTS (SELECT 1 FROM report_jobs WHERE id=?)',[jid])
   ];
   const out=await db.batch(commands);if(!out[0].meta.changes)throw fail('다른 창에서 제보가 바뀌었거나 연결·작업 한도에 도달했습니다. 다시 확인하세요.',409);
@@ -116,7 +133,7 @@ export async function chatConsoleApi(request,env,ctx,{json,bytes,body,me,audit,i
  // Text never changes those permissions. Concurrent requests use the old job status as a claim.
  const commands=[db.prepare('INSERT INTO work_messages (id,report_id,actor,role,job_id,text,attachment_ids,created_at) VALUES (?,?,?,\'admin\',?,?,?,?)').bind(v.request_id,r.id,actor,jid,text,JSON.stringify(ids),at)];
  if(active){
-  const input={...parse(previous.input,{}),parent_job_id:previous.id,chat_message_id:v.request_id},context=await messagesContext(db,r.id,actor);
+  const input={...parse(previous.input,{}),parent_job_id:previous.id,chat_message_id:v.request_id,revision_baseline:await revisionBaseline(db,r,actor,previous)},context=await messagesContext(db,r.id,actor);
   input.chat_context=[...context.chat_context,{role:'admin',text,attachment_ids:ids}].slice(-30);input.chat_file_ids=[...new Set([...context.chat_file_ids,...ids])].slice(-32);
   commands.push(db.prepare("INSERT INTO report_jobs (id,report_id,station_key,kind,status,report_version,actor,input,questions,created_at,updated_at) SELECT ?,?,?,?,'awaiting_external',?,?,?,'[]',?,? WHERE EXISTS (SELECT 1 FROM report_jobs WHERE id=? AND status=?) AND EXISTS (SELECT 1 FROM reports WHERE id=? AND status='accepted' AND updated_at=?) AND (SELECT id FROM work_messages WHERE report_id=? AND actor=? AND role='admin' ORDER BY rowid DESC LIMIT 1)=?").bind(jid,r.id,r.station_key,previous.kind,r.updated_at,actor,JSON.stringify(input),at,at,previous.id,previous.status,r.id,r.updated_at,r.id,actor,v.request_id),db.prepare("UPDATE report_jobs SET status='cancelled',updated_at=? WHERE id=? AND EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(at,previous.id,jid),db.prepare("UPDATE proposals SET status='superseded' WHERE id=? AND status IN ('draft','ready') AND EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(previous.proposal_id||'',jid));
  }
@@ -125,7 +142,7 @@ export async function chatConsoleApi(request,env,ctx,{json,bytes,body,me,audit,i
  await audit(db,actor,'chat.admin-message',r.id,{message:v.request_id,job:jid});return json(await chatDetail(env,r.id,actor),201);
 }
 async function assigned(env,link,id){
- if(!isId(id))throw fail('작업 ID를 확인하세요.');const j=await env.DB.prepare('SELECT * FROM report_jobs WHERE id=? AND actor=?').bind(id,link.actor).first();if(!j||parse(j.input,{}).engine!=='dots')throw fail('에비에게 맡긴 작업이 아닙니다.',404);
+ if(!isId(id))throw fail('작업 ID를 확인하세요.');const j=await env.DB.prepare('SELECT * FROM report_jobs WHERE id=? AND actor=?').bind(id,link.actor).first();if(!j||parse(j.input,{}).engine!=='dots')throw fail('연결 작업자에게 맡긴 작업이 아닙니다.',404);
  const r=await env.DB.prepare('SELECT * FROM reports WHERE id=?').bind(j.report_id).first();if(!r||r.status!=='accepted')throw fail('작업이 철회되었거나 완료됐습니다.',409);return {j,r};
 }
 function b64(bytes){let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(binary);}

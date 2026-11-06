@@ -71,6 +71,10 @@ async function createWork(r,jar){
  const response=await call('/api/console/ai-work',{method:'POST',jar,body:{report_id:r.id,report_version:report(r.id).updated_at,request_id:crypto.randomUUID(),operation_approved:true,engine:'dots',kind:'structure',structure}});
  assert.equal(response.status,202,await response.clone().text());return (await response.json()).job;
 }
+async function startConversation(r,jar,text){
+ const response=await call(chatPath(r.id),{method:'POST',jar,body:{request_id:crypto.randomUUID(),start:true,confirm:true,report_version:report(r.id).updated_at,text,attachment_ids:[]}});
+ assert.equal(response.status,201,await response.clone().text());return (await response.json()).job;
+}
 async function readChat(id,jar){const r=await call(chatPath(id),{jar});assert.equal(r.status,200,await r.clone().text());const v=await r.json();assert.equal(v.report_id,id);assert(Array.isArray(v.messages));assert.equal(v.dispatch.automatic,false);return v;}
 async function sendAdmin(id,jar,text,attachment_ids=[],request_id=crypto.randomUUID()){
  const r=await call(chatPath(id),{method:'POST',jar,body:{request_id,text,attachment_ids}});assert(r.ok,await r.clone().text());return {response:r,value:await r.json(),request_id};
@@ -113,6 +117,52 @@ try{
  approval=await call('/api/console/proposals/'+cp.id+'/approve',{method:'POST',jar:jarA,body:confirmed});assert.equal(approval.status,409,'Repeated final approval must not apply again');
  // Restore an isolated fixture; the remaining legacy scenarios expect an empty map.
  db.prepare('DELETE FROM station_layers WHERE station_key=?').run(station);
+ }
+ { // Revision data comes from the exact private draft, not a fresh model estimate.
+ const revision=seed(),first=await startConversation(revision,jarA,'사진에서 구조물 초안을 추정해 주세요.');
+ const geometry={...structure,name:'기준 치수 키오스크',position:[...position],size:[1.2,.4,2.03],heading:0,color:'#a1b2c3',dimension_basis:'estimated',parts:[{id:'front',type:'plane',vertices:[[-.6,-.2,0],[.6,-.2,0],[.6,-.2,2.03],[-.6,-.2,2.03]],texture:'front',uv:[[0,0],[1,0],[1,1],[0,1]]}]};
+ const provenance={evidence:'사진 비례를 바탕으로 한 기존 추정',uncertainty:'현장 실측 전이며 절대 척도는 확인하지 못함'},firstPlan={...plan(revision.ids),structure:geometry,structure_provenance:provenance};
+ const firstDraft=data(await tool('toolkit_submit_plan',{job_id:first.id,plan:firstPlan}));assert.equal(firstDraft.status,'draft');
+ const original=db.prepare('SELECT * FROM proposals WHERE id=?').get(firstDraft.proposal_id),originalTarget=JSON.parse(original.target);
+ const expected={job_id:first.id,proposal_id:original.id,kind:'structure',name:geometry.name,structure:geometry,facade_alias:null,slot:null,hide_ids:[],structure_provenance:provenance};
+ await sendAdmin(revision.id,jarA,'방향 30도, 깊이 0.45m, 이름 수정2로 바꾸고 나머지는 유지해 주세요.');
+ const revised=(await readChat(revision.id,jarA)).job,revisionInput=JSON.parse(job(revised.id).input);
+ assert.deepEqual(revisionInput.revision_baseline,expected,'Width/height, position, color, parts/UV and estimate provenance survive a depth-only revision');
+ assert.equal(revisionInput.structure,null,'The baseline is context, not a new fixed-geometry authorization');
+ assert.deepEqual(revisionInput.allowed_kinds,JSON.parse(job(first.id).input).allowed_kinds);assert.deepEqual(revisionInput.permitted_ids,JSON.parse(job(first.id).input).permitted_ids);
+ const revisionRead=data(await tool('toolkit_read_work',{job_id:revised.id}));assert.deepEqual(revisionRead.input.revision_baseline,expected);assert(revisionRead.instructions.includes('A depth-only change must preserve width and height'));assert(revisionRead.instructions.includes(JSON.stringify(expected)));
+ assert.deepEqual(JSON.parse(db.prepare('SELECT target FROM proposals WHERE id=?').get(original.id).target),originalTarget,'Capturing a baseline cannot mutate the original proposal geometry');
+ assert.equal(db.prepare('SELECT status FROM proposals WHERE id=?').get(original.id).status,'superseded');
+ // Snapshot values remain frozen when a question-only child has no new proposal.
+ const altered=structuredClone(originalTarget);altered.structure.size[0]=9;db.prepare('UPDATE proposals SET target=? WHERE id=?').run(JSON.stringify(altered),original.id);
+ data(await tool('toolkit_request_info',{job_id:revised.id,questions:['깊이만 바꾸고 기존 폭과 높이는 유지하면 될까요?']}));
+ await sendAdmin(revision.id,jarA,'네. 폭 1.2m와 높이 2.03m는 그대로입니다.');const answered=(await readChat(revision.id,jarA)).job;
+ assert.deepEqual(JSON.parse(job(answered.id).input).revision_baseline,expected,'Needs-info continuation inherits the saved snapshot without re-reading different geometry');
+ db.prepare('UPDATE proposals SET target=? WHERE id=?').run(original.target,original.id);
+ db.prepare("UPDATE report_jobs SET status='failed',error='fixture execution interrupted' WHERE id=?").run(answered.id);
+ const retry=await startConversation(revision,jarA,'이전 실행 실패를 재시도하고 최신 수정 요청을 반영해 주세요.');assert.deepEqual(JSON.parse(job(retry.id).input).revision_baseline,expected,'Consent-based retry preserves the earlier draft baseline');
+ await Promise.all(['추정 치수 근거도 유지해 주세요.','구성요소와 UV도 그대로 유지해 주세요.'].map(text=>sendAdmin(revision.id,jarA,text)));
+ const latest=(await readChat(revision.id,jarA)).job;assert.deepEqual(JSON.parse(job(latest.id).input).revision_baseline,expected,'Concurrent child rebasing keeps the same baseline');
+ const corrected={...geometry,name:'수정2',size:[1.2,.45,2.03],heading:30},secondDraft=data(await tool('toolkit_submit_plan',{job_id:latest.id,plan:{...firstPlan,structure:corrected}}));assert.equal(secondDraft.status,'draft');
+ assert.deepEqual(JSON.parse(db.prepare('SELECT target FROM proposals WHERE id=?').get(secondDraft.proposal_id).target).structure,corrected);
+ await sendAdmin(revision.id,jarA,'이제 이름만 수정3으로 바꿔 주세요.');const third=(await readChat(revision.id,jarA)).job,thirdBaseline=JSON.parse(job(third.id).input).revision_baseline;
+ assert.equal(thirdBaseline.job_id,latest.id);assert.equal(thirdBaseline.proposal_id,secondDraft.proposal_id);assert.deepEqual(thirdBaseline.structure,corrected,'A newer actual draft replaces the older baseline');
+ // Deliberately corrupted pointers must not disclose another reviewer/report/job.
+ for(const mismatch of ['reviewer','report','ai_job','station','slot_projection']){
+  const scoped=seed(),scopedJob=await createWork(scoped,jarA),pid=crypto.randomUUID(),meta={...JSON.parse(original.meta),ai_job:mismatch==='ai_job'?first.id:scopedJob.id};
+  const slotGeometry={alias:'CHAT-S01',name:'사진 면',floor:'2F',position,heading:90,surface:[2,1],px:[64,32],dimension_basis:'estimated'},target=mismatch==='slot_projection'?JSON.stringify({...originalTarget,slot:{...slotGeometry,image:'/private-image-must-not-copy.png',registration:{id:'private-registration'},principal_id:'private-actor'}}):original.target;
+  db.prepare('INSERT INTO proposals (id,station_key,report_ids,kind,target,meta,status,reviewer,created_at) VALUES (?,?,?,?,?,?,?,?,?)').run(pid,mismatch==='station'?'S201807':station,JSON.stringify([mismatch==='report'?revision.id:scoped.id]),'structure',target,JSON.stringify(meta),'draft',mismatch==='reviewer'?'별도 승인자':'채팅 승인자',new Date().toISOString());
+  db.prepare("UPDATE report_jobs SET proposal_id=?,status='draft' WHERE id=?").run(pid,scopedJob.id);
+  await sendAdmin(scoped.id,jarA,'현재 작업에서 읽을 수 있는 기준만 확인해 주세요.');const guarded=(await readChat(scoped.id,jarA)).job;
+  const guardedBaseline=JSON.parse(job(guarded.id).input).revision_baseline;
+  if(mismatch==='slot_projection'){assert.deepEqual(guardedBaseline.slot,slotGeometry);assert(!JSON.stringify(guardedBaseline).includes('private-'),'Stored slot extensions cannot copy private image URLs, registration or identity data');}
+  else assert.equal(guardedBaseline,null,'Foreign '+mismatch+' proposal must not become a baseline');
+ }
+ const privateOther=await startConversation(revision,jarB,'별도 승인자의 독립 작업입니다.');assert.equal(JSON.parse(job(privateOther.id).input).revision_baseline,null,'Another actor cannot inherit the report owner\'s draft');
+ const poisoned=JSON.parse(job(privateOther.id).input);poisoned.revision_baseline=expected;db.prepare('UPDATE report_jobs SET input=? WHERE id=?').run(JSON.stringify(poisoned),privateOther.id);
+ await sendAdmin(revision.id,jarB,'이 작업의 후속 확인입니다.');const privateChild=(await readChat(revision.id,jarB)).job;assert.equal(JSON.parse(job(privateChild.id).input).revision_baseline,null,'Inherited baseline origins are also checked against the actor');
+ const unrelated=seed(),unrelatedJob=await createWork(unrelated,jarA),unrelatedInput=JSON.parse(job(unrelatedJob.id).input);unrelatedInput.revision_baseline=expected;db.prepare('UPDATE report_jobs SET input=? WHERE id=?').run(JSON.stringify(unrelatedInput),unrelatedJob.id);
+ await sendAdmin(unrelated.id,jarA,'다른 제보의 기준은 가져오지 마세요.');const unrelatedChild=(await readChat(unrelated.id,jarA)).job;assert.equal(JSON.parse(job(unrelatedChild.id).input).revision_baseline,null,'Inherited baseline origins are also checked against the report');
  }
  denied(await tool('toolkit_read_conversation',{job_id:foreignJob.id}));
  denied(await tool('toolkit_read_conversation',{job_id:crypto.randomUUID()}));
@@ -253,7 +303,7 @@ try{
  clock=Date.parse(linkA.expires_at)+8*864e5;denied(await tool('toolkit_read_conversation',{job_id:foreignJob.id},principalB));
  assert.deepEqual(layer(),{});assert.equal(networkAttempts,0,'Conversation work must not call external delivery or a model provider');
  const discover=await rpc('server/discover');assert(!discover.payload.result.capabilities.events,'Chat must not advertise an unsafe automatic wakeup transport');
- console.log('PASS: private per-actor chat; bounded validated attachments and scoped MCP reads; idempotent and concurrent child jobs; draft supersession and in-flight rejection; needs-info continuation; hard quotas; revocation/expiration; no public map writes or automatic wakeup');
+ console.log('PASS: private per-actor chat; bounded validated attachments and scoped MCP reads; idempotent and concurrent child jobs; immutable owned revision baselines through questions/retries; draft supersession and in-flight rejection; needs-info continuation; hard quotas; revocation/expiration; no public map writes or automatic wakeup');
 }finally{
  globalThis.Date=nativeDate;globalThis.fetch=nativeFetch;db.close();
 }

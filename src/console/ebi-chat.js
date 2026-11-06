@@ -58,7 +58,7 @@ export function createEbiChat({api,toast,onWorkChange,onOpenDraft}){
   if(data&&ui.lastConnection!==connected){ui.connection.open=!connected;ui.lastConnection=connected;}
   setText(ui.status,s.loading&&!data?'대화 기록 확인 중…':data?(connected?(data.connection.label||'Codex')+' 연결됨':'Codex 연결 필요')+(job||!view.editable?' · '+view.label:''):'');
   setText(ui.dispatch,view.dispatch||(data?.dispatch?.automatic?(data.dispatch.runner?.phase==='working'?'Codex 작업 중 · 응답과 수정안을 기다리는 중':'자동 작업자 실행 중 · 이 채팅에서 지시하고 답변을 확인하세요.'):(data?.dispatch?.note||'최초 연결 인증 후 이 화면에서 작업합니다.')));
-  setText(ui.guidance,view.guidance|| (job&&job.kind!=='conversation'?'이전 수동 작업입니다. 아래에서 대화 작업을 맡기면 이전 초안을 대체하고 Codex가 종류·치수를 제안합니다.':['draft','ready'].includes(job?.status)?'수정할 점을 대화로 보내거나 오른쪽 수정안을 최종 승인하세요.':'원하는 결과를 설명해 주세요. 종류·치수·사진 보정은 Codex가 제안합니다.'));
+  setText(ui.guidance,view.guidance|| (job&&job.kind!=='conversation'?'이전 수동 작업입니다. 아래에서 대화 작업을 맡기면 이전 초안을 대체하고 Codex가 종류·치수를 제안합니다.':['draft','ready'].includes(job?.status)?'수정할 점을 작업 채팅으로 보내거나 아래의 수정안을 최종 승인하세요.':'원하는 결과를 설명해 주세요. 종류·치수·사진 보정은 Codex가 제안합니다.'));
   ui.handoff.hidden=true;ui.handoffId.textContent=job?'현재 작업 '+job.id:'';ui.handoffPrompt.value=job?codexTaskPrompt(job.id):'';ui.handoffOpen.href=job?codexPromptUrl(ui.handoffPrompt.value):'#';
   ui.questions.replaceChildren();ui.questions.hidden=true;ui.jobError.textContent=view.editable?job?.error||'':'';ui.jobError.hidden=!view.editable||!job?.error;ui.retryWork.hidden=!view.editable||!data?.dispatch?.retryable;
   ui.draft.hidden=!(job?.proposal_id&&(view.result||view.editable&&['draft','ready'].includes(job.status)));setText(ui.draft,view.result?'승인 결과 확인':'초안 검토로 이동');ui.work.hidden=true;compose();
