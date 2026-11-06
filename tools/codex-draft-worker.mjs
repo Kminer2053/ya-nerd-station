@@ -110,7 +110,7 @@ export class AppServerClient{
  }
 }
 export function discoverToolkit(statuses){
- const matches=[];for(const server of statuses){const tools=Object.entries(server.tools||{}).map(([key,t])=>({key,name:t.name||key})),mapped={};for(const wanted of ALLOWED_TOOLS){const found=tools.filter(t=>t.name===wanted||t.name.endsWith('_'+wanted)||t.key===wanted||t.key.endsWith('_'+wanted));if(found.length===1)mapped[wanted]=found[0].name;}
+ const matches=[];for(const server of statuses){const tools=Object.entries(server.tools||{}).map(([key,t])=>({key,name:t.name||key})),mapped={};for(const wanted of ALLOWED_TOOLS){const named=value=>value===wanted||value.endsWith('_'+wanted)||value.endsWith('.'+wanted),found=tools.filter(t=>named(t.name)||named(t.key));if(found.length===1)mapped[wanted]=found[0].name;}
   if(mapped.toolkit_connection_status&&mapped.toolkit_list_work)matches.push({server:server.name,tools:mapped,missing:REQUIRED_TOOLS.filter(n=>!mapped[n]),authStatus:server.authStatus});
  }
  const complete=matches.filter(m=>!m.missing.length);if(complete.length===1)return complete[0];if(complete.length>1)throw Error('편집기 MCP가 여러 개입니다. --mcp-url로 하나를 명시하세요.');
