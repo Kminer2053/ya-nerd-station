@@ -1,21 +1,80 @@
 import {geometryParts,boxPlanes} from './draft-geometry.js';
 import {roles} from './model.js';
 import {stationOf,stations,seoulOrigin} from './stations.js';
-const VWORLD_TILES='https://cdn.vworld.kr/TDServer/services/map4/7Iuk64K0/';
+import {stationTileSources,openTileset,firstRenderedTile} from './scene-loading.js';
+import {createPreviewImages} from './scene-images.js';
 
 // labels: status lines for the page using the map (editor, public reports, ambassador console).
 export async function createScene(onPick,{labels={}}={}){
- const say={loading:'서울역 확정 설정 로드됨 · 최신 지도 연결 중…',ready:'서울역 최신 파사드·시설 · 최종 승인 제보 반영 / 직접 저장 보호',...labels};
- const host=document.querySelector('#map');host.innerHTML='<div id="nativeMap" style="position:absolute;inset:0"></div><iframe id="seoulMap" title="서울역 최신화 지도 · 편집 미리보기" hidden style="position:absolute;inset:0;width:100%;height:100%;border:0"></iframe>';
- let native=null,project,selected=null,ready=false,isSeoul=false,pending=[];
- const frame=document.querySelector('#seoulMap'),base=seoulOrigin();
- const send=(action,data={})=>{const message={channel:'station-toolkit',action,...data};if(ready)frame.contentWindow.postMessage(message,base);else pending.push(message);};
- addEventListener('message',e=>{if(e.origin!==base||e.source!==frame.contentWindow||e.data?.channel!=='station-toolkit')return;if(e.data.event==='ready'){ready=true;for(const m of pending)frame.contentWindow.postMessage(m,base);pending=[];document.querySelector('#sceneStatus').textContent=say.ready;}if(e.data.event==='pick')onPick(e.data.pick);});
- return {async connect(p){project=p;isSeoul=p.site_id==='S202103';document.querySelector('#nativeMap').hidden=isSeoul;frame.hidden=!isSeoul;if(isSeoul){const u=new URL('/app/',base);u.search=new URLSearchParams({site:'S202103',floor:'2F',embed:'catalog',toolkit:'1',toolkitOrigin:location.origin,...(base.startsWith('http:')?{scene:'local'}:{})});if(frame.src!==u.href){ready=false;pending=[];frame.src=u.href;}send('render',{project:p,selected});send('floor',{floor:stationOf(p).default_floor});document.querySelector('#floor').value=stationOf(p).default_floor;document.querySelector('#sceneStatus').textContent=say.loading;}else{native||=await createNativeScene(onPick);await native.connect(p);}},render(p){project=p;if(isSeoul)send('render',{project:p,selected});else native?.render(p);},select(s){selected=s;if(isSeoul&&project)send('render',{project,selected});},setFloor(f){if(isSeoul)send('floor',{floor:f});else native?.setFloor(f);},setGrid(value){if(isSeoul)send('grid',{value});else native?.setGrid(value);},focus(position){if(isSeoul)send('focus',{position});else native?.focus(position);},fit(){if(isSeoul)send('fit');else native?.fit();},
-  // Seoul only: a proposed facade shown on its slot (preview, not saved) and the slot's front view.
-  previewFacade(slotAlias,imageUrl){if(isSeoul)send('facade-preview',{slotAlias,imageUrl});},focusFacade(focus){if(isSeoul)send('facade-focus',{focus});else native?.focusFacade(focus);},get isSeoul(){return isSeoul;}};
+ const say={loading:'서울역 지도 화면을 연결하는 중…',ready:'서울역 첫 실내 모델 표시 완료 · 개인 초안 저장 / 공개 지도는 최종 승인 후 반영',...labels};
+ const host=document.querySelector('#map'),status=document.querySelector('#sceneStatus');host.innerHTML='<div id="nativeMap" style="position:absolute;inset:0"></div>';
+ const nativeHost=document.querySelector('#nativeMap'),base=seoulOrigin(),images=createPreviewImages({origin:location.origin});
+ let native=null,nativePromise=null,project=null,selected=null,frame=null,ready=false,documentReady=false,isSeoul=false,disposed=false,connectedStation=null,renderedFloor=null,floor='2F',grid=true,epoch=0,renderVersion=0,renderQueued=false,renderAbort=null,documentTimer=null,readyTimer=null,sentFloor=null,sentGrid=null,controls=null;
+ const pending=new Map();
+ function setStatus(phase,text,retry=false){
+  if(disposed)return;status.textContent=text;status.dataset&&(status.dataset.mapState=phase);if(controls){controls.hidden=!retry;controls.style.display=retry?'flex':'none';const link=controls.querySelector('a');link.hidden=!isSeoul;link.href=frame?.src||base+'/app/?site=S202103';}
+  if(retry&&!controls&&document.createElement){controls=document.createElement('div');controls.style.cssText='position:absolute;z-index:4;top:56px;left:12px;display:flex;gap:8px;align-items:center;background:#fff;padding:8px;border-radius:4px';
+   const button=document.createElement('button');button.type='button';button.textContent='지도 다시 연결';button.onclick=()=>{if(project)connect(project,true).catch(error=>setStatus('failed',error.message,true));};controls.append(button);
+   const link=document.createElement('a');link.textContent='지도 별도 열기';link.target='_blank';link.rel='noopener';link.href=frame?.src||base+'/app/?site=S202103';link.hidden=!isSeoul;controls.append(link);host.append(controls);
+  }
+ }
+ const clearTimers=()=>{clearTimeout(documentTimer);clearTimeout(readyTimer);documentTimer=readyTimer=null;};
+ function removeFrame(){clearTimers();ready=documentReady=false;renderedFloor=null;sentFloor=sentGrid=null;renderAbort?.abort();renderAbort=null;renderVersion++;frame?.remove();frame=null;pending.clear();}
+ const post=(action,data={})=>{if(ready&&frame)frame.contentWindow.postMessage({channel:'station-toolkit',action,...data},base);};
+ function scheduleRender(){
+  if(disposed||!isSeoul||!project||!ready||renderQueued)return;
+  renderQueued=true;queueMicrotask(()=>{
+   renderQueued=false;if(disposed||!isSeoul||!ready||!project)return;
+   renderAbort?.abort();const controller=new AbortController();renderAbort=controller;const version=++renderVersion,p=project,f=floor;
+   images.prepare(p,f,{signal:controller.signal}).then(preview=>{
+    if(disposed||version!==renderVersion||project!==p||!isSeoul||!ready)return;
+    post('render',{project:preview,selected});if(sentFloor!==f){post('floor',{floor:f});sentFloor=f;}if(sentGrid!==grid){post('grid',{value:grid});sentGrid=grid;}
+    for(const [key,message]of pending){post(message.action,message.data);pending.delete(key);}
+   }).catch(error=>{if(error.name!=='AbortError'&&version===renderVersion)setStatus('failed',error.message,true);});
+  });
+ }
+ const queue=(key,action,data={})=>{pending.set(key,{action,data});scheduleRender();};
+ function openFrame(){
+  removeFrame();nativeHost.hidden=true;
+  const u=new URL('/app/',base);u.search=new URLSearchParams({site:'S202103',floor,embed:'catalog',toolkit:'1',toolkitOrigin:location.origin,...(base.startsWith('http:')?{scene:'local'}:{})});
+  // Give the new frame its destination before insertion. Reusing an initially
+  // hidden about:blank frame can leave Chrome's cross-origin navigation pending.
+  const next=document.createElement('iframe');next.id='seoulMap';next.title='서울역 최신화 지도 · 편집 미리보기';next.style.cssText='position:absolute;inset:0;width:100%;height:100%;border:0';next.loading='eager';next.src=u.href;frame=next;
+  next.addEventListener('load',()=>{if(disposed||frame!==next||ready)return;documentReady=true;clearTimeout(documentTimer);setStatus('rendering','서울역 지도 문서 연결됨 · 첫 실내 모델 표시를 기다리는 중…');});
+  next.addEventListener('error',()=>{if(frame===next)setStatus('failed','서울역 지도 화면을 불러오지 못했습니다.',true);});
+  documentTimer=setTimeout(()=>{if(frame===next&&!ready)setStatus('failed','서울역 지도 문서 응답이 지연됩니다. 다시 연결하거나 지도를 별도로 열어 주세요.',true);},15000);
+  readyTimer=setTimeout(()=>{if(frame===next&&!ready)setStatus('failed',documentReady?'서울역 첫 실내 모델을 표시하지 못했습니다. 초안은 유지됩니다.':'서울역 지도 문서 응답이 지연됩니다. 다시 연결하거나 지도를 별도로 열어 주세요.',true);},45000);
+  host.append(next);setStatus('loading',say.loading);
+ }
+ const onMessage=e=>{
+  if(disposed||!isSeoul||!frame||e.origin!==base||e.source!==frame.contentWindow||e.data?.channel!=='station-toolkit')return;
+  documentReady=true;clearTimeout(documentTimer);
+  if(e.data.event==='ready'){ready=true;clearTimeout(documentTimer);setStatus(renderedFloor===floor?'ready':'rendering',renderedFloor===floor?say.ready:'서울역 편집 연결됨 · 첫 실내 모델 표시를 기다리는 중…');scheduleRender();}
+  if(e.data.event==='loading'&&(!e.data.floor||e.data.floor===floor)){renderedFloor=null;setStatus(e.data.stage==='first-tile'?'rendering':'loading',e.data.stage==='first-tile'?'서울역 · '+floor+' 첫 실내 모델 표시를 기다리는 중…':'서울역 3D 지도 연결 중…');}
+  if(e.data.event==='rendered'&&e.data.floor===floor){renderedFloor=floor;clearTimers();setStatus('ready',say.ready.replace('첫 실내 모델',floor+' 실내 모델'));}
+  if(e.data.event==='error'&&(!e.data.floor||e.data.floor===floor)){clearTimers();setStatus('failed','서울역 지도 표시 실패: '+String(e.data.message||'지도 연결 오류').slice(0,220)+' · 초안은 유지됩니다.',true);}
+  if(e.data.event==='pick')onPick(e.data.pick);
+ };
+ addEventListener('message',onMessage);
+ async function connect(p,force=false){
+  if(disposed)throw Error('닫힌 지도입니다.');const version=++epoch;project=p;const station=stationOf(p),same=connectedStation===station.id;connectedStation=station.id;
+  if(!same||!station.floors.includes(floor))floor=p.source==='sample'?'2F':station.default_floor;document.querySelector('#floor').value=floor;
+  isSeoul=p.site_id==='S202103';
+  if(isSeoul){native?.dispose();native=null;nativePromise=null;if(!frame||force)openFrame();else scheduleRender();return;}
+  if(frame)removeFrame();nativeHost.hidden=false;
+  const promise=nativePromise||=createNativeScene(onPick,(...args)=>{if(!isSeoul&&!disposed)setStatus(...args);});let value;
+  try{value=await promise;}catch(error){if(promise===nativePromise)nativePromise=null;if(!disposed&&!isSeoul&&version===epoch)setStatus('failed',error.message+' · 초안은 유지됩니다.',true);return;}
+  if(disposed||isSeoul||promise!==nativePromise){value.dispose();return;}if(version!==epoch)return;
+  native=value;await value.connect(p,{floor,force});if(!disposed&&!isSeoul&&version===epoch&&native===value)value.setGrid(grid);
+ }
+ return {connect,render(p){project=p;if(isSeoul)scheduleRender();else native?.render(p);},select(value){selected=value;if(isSeoul)scheduleRender();},
+  setFloor(value){if(!project||!stationOf(project).floors.includes(value))return;floor=value;if(isSeoul)scheduleRender();else native?.setFloor(value);},
+  setGrid(value){grid=!!value;if(isSeoul)scheduleRender();else native?.setGrid(grid);},focus(position){if(isSeoul)queue('camera','focus',{position});else native?.focus(position);},fit(){if(isSeoul)queue('camera','fit');else native?.fit();},
+  previewFacade(slotAlias,imageUrl){if(isSeoul)queue('facade','facade-preview',{slotAlias,imageUrl});},focusFacade(value){if(isSeoul){if(stationOf(project).floors.includes(value.floor))floor=value.floor;queue('camera','facade-focus',{focus:value});}else native?.focusFacade(value);},get isSeoul(){return isSeoul;},
+  dispose(){if(disposed)return;disposed=true;epoch++;removeFrame();removeEventListener('message',onMessage);images.clear();native?.dispose();native=null;nativePromise=null;controls?.remove();controls=null;},
+ };
 }
-async function createNativeScene(onPick){
+async function createNativeScene(onPick,setStatus){
  let centre=stations[1].centre,heights=stations[1].heights;
  const coordinate=(x,y,z)=>[centre[0]+x/(111320*Math.cos(centre[1]*Math.PI/180)),centre[1]+y/111320,z];
  const C=window.Cesium;if(!C)throw Error('3D 렌더러를 불러오지 못했습니다. 네트워크 연결을 확인하고 새로고침하세요.');
@@ -23,7 +82,7 @@ async function createNativeScene(onPick){
  viewer.scene.globe.show=false;viewer.scene.backgroundColor=C.Color.fromCssColorString('#172b2e');viewer.scene.requestRenderMode=true;viewer.scene.maximumRenderTimeChange=Infinity;
  const surfaces=viewer.scene.primitives.add(new C.PrimitiveCollection());
  const layer=new C.CustomDataSource('editor'),gridLayer=new C.CustomDataSource('grid');await viewer.dataSources.add(layer);await viewer.dataSources.add(gridLayer);
- let project,floor='3F',base=null,grid=true;const position=p=>C.Cartesian3.fromDegrees(...p),color=s=>C.Color.fromCssColorString(s),entityPick=new Map();
+ let project,floor='3F',base=null,grid=true,station=null,disposed=false,loading=null,visibleAbort=null,loadVersion=0,modelReady=false;const position=p=>C.Cartesian3.fromDegrees(...p),color=s=>C.Color.fromCssColorString(s),entityPick=new Map();
  const drawGrid=()=>{gridLayer.entities.removeAll();if(!grid)return;for(let x=-30;x<=30;x+=2)for(let y=-18;y<=18;y+=2)gridLayer.entities.add({position:position(coordinate(x,y,heights[floor]+.08)),point:{pixelSize:3,color:C.Color.WHITE.withAlpha(.55),disableDepthTestDistance:0}});};
  function baseStyle(){if(!base||!project)return;const safe=s=>JSON.stringify(String(s));const hidden=project.assets.filter(a=>a.hidden&&a.source_id).map(a=>'${TD_ID} !== '+safe(a.source_id));const f='(${FLOOR} === undefined || ${FLOOR} === '+safe(floor)+')';base.style=new C.Cesium3DTileStyle({show:[f,...hidden].join(' && ')});}
  function draw(){
@@ -54,20 +113,41 @@ async function createNativeScene(onPick){
   for(const r of project.routes){const pts=r.point_ids.map(id=>byId.get(id)).filter(Boolean);for(let i=1;i<pts.length;i++){if(pts[i-1].floor!==floor&&pts[i].floor!==floor)continue;layer.entities.add({polyline:{positions:[pts[i-1],pts[i]].map(p=>position([p.position[0],p.position[1],p.position[2]+.15])),width:4,material:new C.PolylineArrowMaterialProperty(color('#f4b437'))}});}}
   viewer.scene.requestRender();
  }
- const fit=()=>{const p=project?.points.find(p=>p.floor===floor)?.position||[...centre.slice(0,2),heights[floor]];viewer.camera.lookAt(position(p),new C.HeadingPitchRange(C.Math.toRadians(0),C.Math.toRadians(-48),floor==='1F'?330:165));viewer.camera.lookAtTransform(C.Matrix4.IDENTITY);};
+ const fit=()=>{if(disposed)return;const p=[...centre.slice(0,2),heights[floor]],radius=base?.boundingSphere?.radius,range=Number.isFinite(radius)?Math.max(60,Math.min(2000,radius*2.7)):floor==='1F'?330:165;viewer.camera.lookAt(position(p),new C.HeadingPitchRange(C.Math.toRadians(0),C.Math.toRadians(-48),range));viewer.camera.lookAtTransform(C.Matrix4.IDENTITY);viewer.scene.requestRender();};
  const handler=new C.ScreenSpaceEventHandler(viewer.scene.canvas);handler.setInputAction(e=>{const picked=viewer.scene.pick(e.position),id=typeof picked?.id==='string'?picked.id:picked?.id?.id,tag=entityPick.get(id);let p;try{p=viewer.scene.pickPosition(e.position);}catch{}if(!p){const planeOrigin=position([centre[0],centre[1],heights[floor]]),normal=C.Ellipsoid.WGS84.geodeticSurfaceNormal(planeOrigin);p=C.IntersectionTests.rayPlane(viewer.camera.getPickRay(e.position),C.Plane.fromPointNormal(planeOrigin,normal));}if(!p)return;const geo=C.Cartographic.fromCartesian(p),pos=[C.Math.toDegrees(geo.longitude),C.Math.toDegrees(geo.latitude),geo.height];const sourceId=typeof picked?.getProperty==='function'?picked.getProperty('TD_ID'):null;onPick({position:pos,tag,sourceId,floor,view:{heading:C.Math.toDegrees(viewer.camera.heading),pitch:C.Math.toDegrees(viewer.camera.pitch)}});},C.ScreenSpaceEventType.LEFT_CLICK);
- async function connect(p){project=p;const s=stationOf(p);centre=s.centre;heights=s.heights;floor=p.source==='sample'?'2F':s.default_floor;document.querySelector('#floor').value=floor;if(base){viewer.scene.primitives.remove(base);base=null;}document.querySelector('#sceneStatus').textContent=p.source==='sample'?'가상 샘플 공간 · 실제 역 시설 아님':'기본지도 연결 중…';draw();fit();if(p.source==='sample')return;
-  const local=location.hostname==='127.0.0.1'||new URL(location.href).searchParams.get('scene')==='local';if(local&&s.id!=='S201801'){document.querySelector('#sceneStatus').textContent='이 역의 로컬 원본은 준비 중입니다. 위치·시설·경로 레이어는 편집 가능합니다.';return;}
-  // VWorld CDN first (it allows any origin), the site's relay only when that stalls: map traffic stays off the Worker.
-  const say=t=>{document.querySelector('#sceneStatus').textContent=t;};
-  const open=(url,ms)=>new Promise((resolve,reject)=>{let late=false;const timer=setTimeout(()=>{late=true;reject(Error('응답 지연'));},ms);
-   C.Cesium3DTileset.fromUrl(url,{maximumScreenSpaceError:12}).then(t=>{if(late){t.destroy();return;}clearTimeout(timer);resolve(t);},e=>{if(!late){clearTimeout(timer);reject(e);}});});
-  try{const t=local?await open('/local-tiles/tileset.json',30000):await open(VWORLD_TILES+s.id+'/tileset.json',15000).catch(()=>{say('VWorld 직접 연결 지연 · 서버 경로로 다시 연결 중…');return open(`/api/map-source/${s.id}/tileset.json`,20000);});
-   if(project!==p){t.destroy();return;}
-   base=t;viewer.scene.primitives.add(base);baseStyle();fit();say('기본지도 연결됨 · 변경 레이어 별도 저장');}catch(error){console.error('Base map:',error);say('기본지도 연결 실패: '+error.message+' · 변경 레이어는 유지됩니다.');}
+ async function monitorFloor(){
+  if(!base||disposed)return;visibleAbort?.abort();const controller=new AbortController();visibleAbort=controller;const tile=base,f=floor;
+  modelReady=false;setStatus('rendering',station.name+' · '+f+' 첫 실내 모델 표시를 기다리는 중…');
+  try{await firstRenderedTile(viewer,tile,{signal:controller.signal,timeout:20000});if(!disposed&&base===tile&&floor===f){modelReady=true;setStatus('ready',station.name+' · '+f+' 실내 모델 표시 완료 · 변경 레이어 별도 저장');}}
+  catch(error){if(error.name!=='AbortError'&&!disposed)setStatus('failed',error.message+' · 초안은 유지됩니다.',true);}
+ }
+ async function connect(p,{floor:requestedFloor,force=false}={}){
+  if(disposed)return;const s=stationOf(p),same=station?.id===s.id;project=p;station=s;centre=s.centre;heights=s.heights;
+  floor=s.floors.includes(requestedFloor)?requestedFloor:p.source==='sample'?'2F':s.default_floor;document.querySelector('#floor').value=floor;
+  loading?.abort();visibleAbort?.abort();const version=++loadVersion;modelReady=false;
+  if(same&&base&&!force){draw();fit();await monitorFloor();return;}
+  if(base){viewer.scene.primitives.remove(base);base=null;}draw();fit();
+  if(p.source==='sample'){setStatus('sample','가상 샘플 공간 · 실제 역 시설 아님');return;}
+  const controller=new AbortController();loading=controller;let lastError=null;
+  for(const source of stationTileSources(s,{hostname:location.hostname,local:new URLSearchParams(location.search).get('scene')==='local'})){
+   let tile=null;
+   try{
+    setStatus('loading',s.name+' · '+source.label+' 지도 주소 연결 중…');tile=await openTileset(C,source.url,{timeout:source.timeout,signal:controller.signal});
+    if(disposed||controller.signal.aborted||version!==loadVersion){if(!tile.isDestroyed?.())tile.destroy();return;}
+    const displayed=firstRenderedTile(viewer,tile,{signal:controller.signal,timeout:20000});displayed.catch(()=>{});base=tile;viewer.scene.primitives.add(tile);baseStyle();fit();
+    setStatus('rendering',s.name+' 지도 주소 연결됨 · '+floor+' 첫 실내 모델 표시를 기다리는 중…');
+    await displayed;if(disposed||version!==loadVersion)return;modelReady=true;setStatus('ready',s.name+' · '+floor+' 첫 실내 모델 표시 완료 · 변경 레이어 별도 저장');loading=null;return;
+   }catch(error){
+    if(base===tile&&tile){viewer.scene.primitives.remove(tile);base=null;}
+    if(error.name==='AbortError'||disposed||version!==loadVersion)return;lastError=error;
+   }
+  }
+  if(!disposed&&version===loadVersion){loading=null;setStatus('failed',s.name+' 기본지도 연결 실패: '+(lastError?.message||'지도 응답 없음')+' · 초안·사진·동선은 유지됩니다.',true);}
  }
  // Stand in front of a facade (normal = cameraHeading) and look at it.
- function focusFacade(f){if(f.floor&&f.floor!==floor){floor=f.floor;document.querySelector('#floor').value=floor;draw();}const h=f.cameraHeading*Math.PI/180,d=Math.max(6,(f.surfaceWidth||3)*1.6),k=111320*Math.cos(f.latitude*Math.PI/180);
+ function focusFacade(f){if(disposed)return;if(f.floor&&f.floor!==floor){floor=f.floor;document.querySelector('#floor').value=floor;draw();}const h=f.cameraHeading*Math.PI/180,d=Math.max(6,(f.surfaceWidth||3)*1.6),k=111320*Math.cos(f.latitude*Math.PI/180);
   viewer.camera.flyTo({destination:position([f.longitude+Math.sin(h)*d/k,f.latitude+Math.cos(h)*d/111320,f.height+.4]),orientation:{heading:C.Math.toRadians((f.cameraHeading+180)%360),pitch:C.Math.toRadians(-6),roll:0},duration:.9});}
- return{connect,focusFacade,render(p){project=p;draw();},setFloor(v){floor=v;draw();fit();},setGrid(v){grid=v;drawGrid();viewer.scene.requestRender();},fit,focus(p){viewer.camera.flyTo({destination:position([p[0],p[1]-.00025,p[2]+25]),orientation:{heading:0,pitch:C.Math.toRadians(-42),roll:0},duration:.5});}};
+ return{connect,focusFacade,render(p){if(disposed||station&&stationOf(p).id!==station.id)return;project=p;draw();},setFloor(v){if(disposed||!station?.floors.includes(v))return;floor=v;const watch=modelReady;draw();fit();if(watch)monitorFloor();},setGrid(v){if(disposed)return;grid=v;drawGrid();viewer.scene.requestRender();},fit,focus(p){if(!disposed)viewer.camera.flyTo({destination:position([p[0],p[1]-.00025,p[2]+25]),orientation:{heading:0,pitch:C.Math.toRadians(-42),roll:0},duration:.5});},
+  dispose(){if(disposed)return;disposed=true;loadVersion++;loading?.abort();visibleAbort?.abort();handler.destroy?.();entityPick.clear();viewer.destroy?.();},
+ };
 }

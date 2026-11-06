@@ -2,6 +2,7 @@
 // authorizes only jobs explicitly assigned to Dots; no console session or approval tool exists here.
 import {agentLink,connectAgent} from './dots-auth.js';
 import {stationData,imageInfo,seoulBase} from './reports.js';
+import {slotScope} from './facade-slots.js';
 import {runWork} from './ai-work.js';
 import {removalCandidates,parseWorkPlan,workPrompt} from './work-plan.js';
 import {decodePhoto,aiThumbnail} from './work-images.js';
@@ -52,7 +53,7 @@ async function jobContext(env,link,id){
  if(input.chat_message_id){const latest=await env.DB.prepare("SELECT id FROM work_messages WHERE report_id=? AND actor=? AND role='admin' ORDER BY rowid DESC LIMIT 1").bind(r.id,j.actor).first();if(latest?.id!==input.chat_message_id)throw fail('관리자 대화가 갱신됐습니다. toolkit_read_conversation으로 최신 작업을 확인하세요.',409);}
  const layer=parse((await env.DB.prepare('SELECT body FROM station_layers WHERE station_key=?').bind(j.station_key).first())?.body,{assets:{},facades:{}}),all=removalCandidates(layer,r),candidates=all.filter(c=>input.permitted_ids.includes(c.id));
  if(input.permitted_ids.some(id=>!all.some(c=>c.id===id)))throw fail('승인했던 독립 구조물 대상이 변경됐습니다. 새 작업으로 확인하세요.',409);
- const slots=(await stationData(env,j.station_key)).slots.filter(s=>s.floor===r.floor&&metres(s.position,parse(r.position))<=12&&(j.kind!=='conversation'||input.facade_aliases?.includes(s.alias)));
+ const slots=(await stationData(env,j.station_key,fetch,slotScope(j.actor,r))).slots.filter(s=>s.floor===r.floor&&metres(s.position,parse(r.position))<=12&&(j.kind!=='conversation'||input.facade_aliases?.includes(s.alias)));
  let slot=null;if(j.kind==='facade')slot=slots.find(s=>s.alias===input.alias)||null;
  const questions=[];
  if(!photos.length)questions.push('현장 사진을 추가해 주세요.');
@@ -73,7 +74,7 @@ async function callTool(name,args,env,principal,digest,bytes){
  }
  keys(args,name==='toolkit_read_facade_reference'?['job_id','alias']:['toolkit_read_photo','toolkit_read_photo_original'].includes(name)?['job_id','photo_id']:name==='toolkit_store_draft_artifact'?['job_id','request_id','source_photo_ids','image','provenance']:name==='toolkit_submit_plan'?['job_id','plan']:name==='toolkit_request_info'?['job_id','questions']:['job_id']);
  const c=await jobContext(env,link,args.job_id),{j,r,input,photos,candidates,slot,slots,questions}=c;
- if(name==='toolkit_read_work')return result({...jobResult(j),station_key:j.station_key,floor:r.floor,position:parse(r.position),description:r.description,place_note:r.place_note,input,photos,candidates,facade_candidates:slots.map(s=>({alias:s.alias,name:s.name,floor:s.floor,position:s.position,heading:s.heading,px:s.px,surface:s.surface,reference_available:Boolean(s.image)})),slot:slot?{alias:slot.alias,name:slot.name,px:slot.px,surface:slot.surface}:null,required_information:questions,instructions:workPrompt({report:r,input,photos,candidates,slot,slots}),plan_schema:planSchema,note:'모든 사진을 read_photo로 실제 확인한 뒤 계획을 제출하세요. 종류·치수·모서리는 대화 작업이면 에비가 제안합니다. 불충분하면 대화로 보완을 요청하세요. 최종 승인은 사람만 합니다.'});
+ if(name==='toolkit_read_work')return result({...jobResult(j),station_key:j.station_key,floor:r.floor,position:parse(r.position),description:r.description,place_note:r.place_note,input,photos,candidates,facade_candidates:slots.map(s=>({alias:s.alias,name:s.name,floor:s.floor,position:s.position,heading:s.heading,px:s.px,surface:s.surface,dimension_basis:s.dimension_basis,pending_registration:Boolean(s.registration),...(s.registration?{evidence:s.dimension_evidence,uncertainty:s.dimension_uncertainty}:{}),reference_available:Boolean(s.image)})),slot:slot?{alias:slot.alias,name:slot.name,px:slot.px,surface:slot.surface,dimension_basis:slot.dimension_basis,pending_registration:Boolean(slot.registration)}:null,required_information:questions,instructions:workPrompt({report:r,input,photos,candidates,slot,slots}),plan_schema:planSchema,note:'모든 사진을 read_photo로 실제 확인한 뒤 계획을 제출하세요. 종류·치수·모서리는 대화 작업이면 에비가 제안합니다. 파사드 면 후보는 승인자가 입력한 규격을 유지하고 사진만으로 실측이라 주장하지 않습니다. 최종 승인은 사람만 합니다.'});
  if(name==='toolkit_read_facade_reference'){
   const g=slots.find(s=>s.alias===args.alias);if(!g)throw fail('이 작업에 허용된 파사드 자리가 아닙니다.',404);
   const approved=parse((await env.DB.prepare('SELECT body FROM station_layers WHERE station_key=?').bind(j.station_key).first())?.body,{}).facades?.[g.alias]?.front,image=approved||g.image;

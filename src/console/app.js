@@ -10,6 +10,7 @@ import {warp,autoLevels,pixelate,defaultQuad,mapBox} from '../rectify.js';
 import {createScene} from '../scene.js';
 import {workCard,bindWork,stopWorkPoll} from './ai-work.js';
 import {createEbiChat} from './ebi-chat.js';
+import {facadeSlotCard,bindFacadeSlot,facadeSlotReview} from './facade-slot.js';
 
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const tone={received:'mute',analyzing:'mute',review:'info',queued:'lime',applied:'ok',held:'warn',duplicate:'mute',rejected:'warn'};
@@ -71,7 +72,7 @@ function contentCard(r){
 }
 function analysisCard(r){const a=r.analysis,ai=a.ai;
  return '<section class="card"><h3>'+(a.mode==='ai'?'AI 정리':'자동 정리')+(a.mode!=='ai'?' <small>위치·중복 규칙</small>':'')+'</h3><dl class="facts">'
-  +(a.slot?'<dt>파사드 자리</dt><dd><b>'+esc(a.slot.name)+'</b> '+esc(a.slot.alias)+' · '+a.slot.distance+'m · '+a.slot.px.join('×')+' px</dd>':'<dt>파사드 자리</dt><dd>'+(r.position?'12m 안에 없음':'3D 연결 전 역 · 위치 설명 참고')+'</dd>')
+  +(a.slot?'<dt>파사드 자리</dt><dd><b>'+esc(a.slot.name)+'</b> '+a.slot.distance+'m · '+a.slot.px.join('×')+' px</dd>':'<dt>파사드 자리</dt><dd>'+(r.position?'12m 안에 없음':'3D 연결 전 역 · 위치 설명 참고')+'</dd>')
   +(a.facility?'<dt>가까운 시설</dt><dd>'+esc(a.facility.name)+' · '+a.facility.distance+'m</dd>':'')
   +'<dt>같은 곳 제보</dt><dd>'+(a.group?.size||1)+'건'+(detail.group.length?' · '+detail.group.map(g=>g.status_label).join(', '):'')+'</dd>'
   +(a.suggestion?'<dt>'+(a.mode==='ai'?'AI 제안':'제안 작업')+'</dt><dd>'+esc(a.suggestion.label)+'</dd>':'')
@@ -92,8 +93,10 @@ async function openReport(id){
  $('#detailBody').innerHTML='<header class="d-head"><div>'+stagePill(r)+' <b>'+esc(r.type_label)+'</b> · '+esc(r.station_name)+(r.floor?' · '+esc(r.floor):'')+' · '+ago(r.created_at)+(r.user?' · 로그인 제보자':' · 비로그인 제보자')+'</div>'+(a?.confidence!=null?'<div class="confbar" style="--c:'+a.confidence+'"><span>신뢰 '+a.confidence.toFixed(2)+'</span><i></i></div>':'')+'</header>'
   +'<section class="card progress-card">'+progressLine(r)+(r.reason?'<p class="note-reason">승인자 메모 · '+esc(r.reason)+'</p>':'')+'</section>'
   +'<section class="card proposal-review"><h3>수정안 미리보기 · 최종 승인</h3><div id="proposalList" class="proposals"></div></section>'
+  +(approver?facadeSlotCard(detail):'')
   +(approver?'<details class="evidence-fold"><summary>제보 사진·설명 '+r.photos.length+'장 보기</summary>'+contentCard(r)+'</details><details class="evidence-fold"><summary>제보 분류·처리 기록</summary>'+(a?analysisCard(r):'')+decideCard(r)+'</details>':contentCard(r)+(a?analysisCard(r):'')+callout);
  renderProposals();
+ if(approver)bindFacadeSlot(detail,{api,toast,onSaved:async id=>{await openReport(id);await loadList();}});
  for(const b of document.querySelectorAll('[data-login]'))b.onclick=openLogin;
  if(approver){
   for(const b of document.querySelectorAll('[data-decide]'))b.onclick=()=>decide(b.dataset.decide);
@@ -109,13 +112,14 @@ function renderProposals(){
  const all=detail.proposals,approver=Boolean(session.approver),ps=all.filter(p=>['draft','ready','applied','queued'].includes(p.status)).slice(0,1);
  $('#proposalList').innerHTML=ps.length?ps.map(p=>'<article class="proposal" data-proposal="'+esc(p.id)+'"><figure>'+(p.target.before?'<img src="'+esc(p.target.before)+'" alt="지금 지도">':'<span class="pending">'+(p.kind==='structure'?'새 구조물 · 아직 지도에 없음':p.kind==='removal'?'독립 등록된 구조물':'VWorld 원본 텍스처')+'</span>')+'<figcaption>변경 전</figcaption></figure><span aria-hidden="true">→</span><figure>'+(p.image?'<img src="'+esc(p.image)+'" alt="제안 이미지">':'<span class="pending">'+(p.kind==='removal'?'승인 후 숨김 · 원본 보존':'승인자 확인 중')+'</span>')+'<figcaption>제안 '+esc((p.target.px||[]).join('×'))+'</figcaption></figure>'
   +'<div><b>'+esc(p.target.name)+({structure:' · 새 구조물',removal:' · 장애물 숨김',facade:' · 파사드 교체'}[p.kind]||'')+'</b><span class="pill '+(p.status==='ready'?'info':tone[p.status]||'mute')+'">'+esc(STATUS[p.status]||p.status)+'</span>'+(p.reviewer?'<span class="fine">'+esc(p.reviewer)+'</span>':'')+(p.reason?'<p class="fine">'+esc(p.reason)+'</p>':'')+'</div>'
-  +(p.meta?.ai_job?'<section class="ai-effects"><b>AI 초안의 실제 변경 대상</b><p>'+esc(p.meta.summary)+'</p><ul>'+(p.target.effects||[]).map(e=>{const before=e.action==='hide'?JSON.parse(e.before):null;return '<li><strong>'+({hide:'숨김',create:'생성',replace:'파사드 교체'}[e.action]||'변경')+'</strong> · '+esc(e.label)+' <small>'+esc(e.id)+'</small>'+(before?'<br>'+esc(before.floor)+' · '+esc(before.position?.join(', '))+' · '+esc(before.size?.join('×'))+'m'+modelMarkup(before,before.facades||{})+'현재: 표시 → 승인 후: 숨김 · 원본과 복원 정보 보존':'')+'</li>';}).join('')+'</ul><p class="fine">원본 공유 모델은 자동 제거하지 않습니다. 사진에서 확인한 부분과 생성·추정한 부분의 근거와 한계를 함께 확인하세요.</p></section>':'')
+  +(p.meta?.ai_job?'<section class="ai-effects"><b>AI 초안의 실제 변경 대상</b><p>'+esc(p.meta.summary)+'</p><ul>'+(p.target.effects||[]).map(e=>{const before=e.action==='hide'?JSON.parse(e.before):null;return '<li><strong>'+({hide:'숨김',create:'생성',replace:'파사드 교체'}[e.action]||'변경')+'</strong> · '+esc(e.label)+(before?'<br>'+esc(before.floor)+' · '+esc(before.position?.join(', '))+' · '+esc(before.size?.join('×'))+'m'+modelMarkup(before,before.facades||{})+'현재: 표시 → 승인 후: 숨김 · 원본과 복원 정보 보존':'')+'</li>';}).join('')+'</ul><p class="fine">원본 공유 모델은 자동 제거하지 않습니다. 사진에서 확인한 부분과 생성·추정한 부분의 근거와 한계를 함께 확인하세요.</p></section>':'')
   +(p.kind==='structure'&&p.image?'<section class="saved-model">'+modelMarkup(p.target.structure,p.images||p.image)+'<details class="face-review"><summary>보정된 모든 면 확인 · 사진을 누르면 확대</summary><div class="face-results">'+Object.entries(p.images||{front:p.image}).map(([side,url])=>'<figure><a href="'+esc(url)+'" target="_blank" rel="noopener"><img src="'+esc(url)+'" alt="보정한 '+esc(photoViewLabel(side))+'"></a><figcaption>'+esc(photoViewLabel(side))+'</figcaption></figure>').join('')+'</div></details><p class="fine">'+esc(p.target.structure.floor)+' · '+esc(p.target.structure.position.join(', '))+' · '+p.target.structure.heading+'°<br>크기 근거: '+(p.target.structure.dimension_basis==='measured'?'실측 / 도면 확인':'사진 참고 추정 · 현장 확인 필요')+'</p></section>':'')
   +artifactReviewMarkup(p.meta,detail.report.photos)
+  +facadeSlotReview(p)
   +(p.meta?.structure_provenance?'<div class="estimate-note"><b>추정 · 현장 확인 필요</b><p>근거: '+esc(p.meta.structure_provenance.evidence)+'</p><p>한계: '+esc(p.meta.structure_provenance.uncertainty)+'</p></div>':'')
   +(approver&&['draft','ready'].includes(p.status)&&detail.report.status==='accepted'&&p.meta?.ai_job?'<div class="draft-checks" data-checks="'+p.id+'"><p>수정할 부분은 왼쪽 대화에 적어 주세요. 새로운 요청을 보내면 이 수정안의 승인은 무효화되고 새 초안으로 이어집니다.</p><button type="button" data-saved-preview="'+p.id+'">지도에서 배치 확인</button><label><input type="checkbox" name="final"> 저장된 수정안의 위치·크기·방향·통행 폭, 모든 보정면의 개인정보, 생성·숨김·교체 대상을 확인했습니다.</label><button type="button" class="primary" data-final="'+p.id+'">최종 승인 · 지도에 반영</button></div>':approver&&['draft','ready'].includes(p.status)?'<div class="estimate-note">이전 수동 초안입니다. 에비에게 대화 작업을 맡기면 새 수정안으로 대체됩니다.</div>':'')
   +(approver&&p.meta?.ai_job&&p.status==='applied'&&['structure','removal'].includes(p.kind)?'<button type="button" data-undo="'+p.id+'">이 자동 작업만 되돌리기</button>':'')+'</article>').join('')
-  :'<div class="draft-empty"><b>에비의 수정안이 여기에 나타납니다.</b><p>사진·설명으로 대화하면 작업 종류, 치수 추정, 파사드 보정과 변경 대상이 한 수정안으로 정리됩니다. 입력 폼을 채울 필요는 없습니다.</p><p class="fine">촬영하지 않은 면은 만들지 않습니다. 바닥 데칼은 아직 지원하지 않습니다.</p></div>';
+  :'<div class="draft-empty"><b>에비의 수정안이 여기에 나타납니다.</b><p>사진·설명으로 대화하면 작업 종류, 치수 추정, 파사드 보정과 변경 대상이 한 수정안으로 정리됩니다. 등록된 파사드 면이 없다면 아래에서 면의 위치와 규격을 먼저 확인해 주세요.</p><p class="fine">촬영하지 않은 면은 만들지 않습니다. 바닥 데칼은 아직 지원하지 않습니다.</p></div>';
  const previous=all.filter(p=>!ps.some(x=>x.id===p.id));if(previous.length)$('#proposalList').insertAdjacentHTML('beforeend','<details class="previous-drafts"><summary>이전 초안 '+previous.length+'개 · 승인 불가</summary><ul>'+previous.map(p=>'<li>'+esc(p.target.name)+' · '+esc(STATUS[p.status]||p.status)+'</li>').join('')+'</ul></details>');
  for(const b of document.querySelectorAll('[data-final]'))b.onclick=async()=>{const checked=b.closest('[data-checks]').querySelector('[name=final]').checked;if(!checked){toast('저장된 수정안과 개인정보·변경 대상을 확인해 주세요.');return;}if(!confirm('지금 표시된 수정안을 최종 승인하여 공개 지도에 반영할까요?'))return;b.disabled=true;try{const v=await api('/api/console/proposals/'+b.dataset.final+'/approve',{method:'POST',body:JSON.stringify({confirm:true,geometry_checked:true,privacy_checked:true,preview_checked:true,effects_checked:true})});toast(v.note);await refresh();}catch(e){toast(e.message);b.disabled=false;}};
  for(const b of document.querySelectorAll('[data-saved-preview]'))b.onclick=()=>previewSavedProposal(all.find(p=>p.id===b.dataset.savedPreview)).catch(e=>toast(e.message));
@@ -130,11 +134,11 @@ async function decideProposal(id,action){try{const v=await api('/api/console/pro
 // ---- Rectification bench (approvers): four corners → homography onto the slot's exact pixel grid
 async function setupBench(slot){
  const r=detail.report,a=r.analysis||{},isStructure=r.type==='new',saved=isStructure?detail.proposals.find(p=>p.kind==='structure'&&['draft','ready'].includes(p.status)):null;let slots=[];
- if(!isStructure)try{slots=(await api('/api/console/station?key='+encodeURIComponent(r.station_key))).slots;}catch{}
+ if(!isStructure)try{slots=(await api('/api/console/station?key='+encodeURIComponent(r.station_key)+'&report_id='+r.id)).slots;}catch{}
  if(r.position)slots=slots.map(s=>({...s,d:s.floor===r.floor?nearest([s],r.position,r.floor,1e9)?.distance??1e9:1e9})).sort((x,y)=>x.d-y.d);
  slot=slot?slots.find(s=>s.alias===slot.alias)||slot:slots[0]||null;
  const structure=isStructure?initialStructure(r,saved?.target.structure):null;if(isStructure)slot=structureSlot(structure);
- if(!slot){$('#bench').innerHTML='<h3>정면 보정</h3><p class="fine">이 역에는 파사드 자리가 없어요. 편집기에서 구조물과 파사드를 먼저 등록하세요.</p>';return;}
+ if(!slot){$('#bench').innerHTML='<h3>정면 보정</h3><p class="fine">이 제보에서 확인할 수 있는 파사드 면이 없습니다. 사진을 입힐 면의 위치·규격에서 면 후보를 먼저 저장하세요.</p>';return;}
  bench={slot,slots,structure,side:'front',faceStates:structuredClone(saved?.meta?.faces||{}),photo:-1,quad:null,src:null,blurs:[],drawing:false,levels:true,people:true,loading:false,loadVersion:0};
  if(saved?.meta?.photo&&!bench.faceStates.front)bench.faceStates.front={...saved.meta,px:slot.px};
  $('#bench').innerHTML=(isStructure?structureFields(structure,r.station_key):'')+'<header class="bench-head"><h3>사진 정면 보정</h3>'+(isStructure?'':'<label for="slotPick">파사드 자리</label><select id="slotPick">'+slots.map(s=>'<option value="'+esc(s.alias)+'"'+(s.alias===slot.alias?' selected':'')+'>'+esc(s.name)+' · '+esc(s.floor)+' · '+s.px.join('×')+(Number.isFinite(s.d)&&s.d<1e8?' · '+Math.round(s.d)+'m':'')+'</option>').join('')+'</select>')+'</header>'
@@ -228,7 +232,7 @@ async function previewImages(images){
 async function previewSavedProposal(p){
  const r=detail.report,st=connectedStation(r.station_key);if(!p||!st)throw Error('저장된 수정안과 연결된 지도를 확인해 주세요.');
  const preview=p.image?await previewImages(p.images||{front:p.image}):{};
- const id=r.id,slots=p.kind==='facade'?(await api('/api/console/station?key='+encodeURIComponent(r.station_key))).slots:[],slot=slots.find(s=>s.alias===p.target.alias),geometry=p.target.structure;
+ const id=r.id,slots=p.kind==='facade'?(await api('/api/console/station?key='+encodeURIComponent(r.station_key)+'&report_id='+r.id)).slots:[],slot=p.target.slot||slots.find(s=>s.alias===p.target.alias),geometry=p.target.structure;
  if(detail.report.id!==id)return;
  $('#map3dCard').hidden=false;$('#map3dTitle').textContent='저장된 수정안 · 읽기 전용';$('#map3dNote').textContent='지도 클릭은 수정안을 바꾸지 않습니다. 변경할 점은 에비에게 대화로 요청하세요.';
  $('#floor').innerHTML=st.floors.map(f=>'<option>'+f+'</option>').join('');if(st.id!=='S202103')await ensureCesium();

@@ -4,6 +4,7 @@ import {decodePhoto,aiThumbnail} from './work-images.js';
 import {unzipSync} from 'fflate';
 import {removalCandidates} from './work-plan.js';
 import {metres} from '../src/reports.js';
+import {slotScope,rebaseSlots} from './facade-slots.js';
 const parse=(s,f=null)=>{try{return s?JSON.parse(s):f;}catch{return f;}};
 const stamp=()=>new Date().toISOString();
 const isId=s=>typeof s==='string'&&/^[a-f0-9-]{36}$/.test(s);
@@ -93,7 +94,7 @@ export async function chatConsoleApi(request,env,ctx,{json,bytes,body,me,audit,i
   const link=await db.prepare('SELECT id FROM agent_links WHERE actor=? AND principal_id IS NOT NULL AND revoked_at IS NULL AND expires_at>? LIMIT 1').bind(actor,stamp()).first();
   if(!link)throw fail('에비 연결이 없거나 만료됐습니다. 연결한 뒤 보내세요. 입력은 유지됩니다.',409);
   const layer=parse((await db.prepare('SELECT body FROM station_layers WHERE station_key=?').bind(r.station_key).first())?.body,{assets:{},facades:{}});
-  const slots=(await stationData(env,r.station_key)).slots.filter(s=>s.floor===r.floor&&metres(s.position,parse(r.position))<=12);
+  const slots=(await stationData(env,r.station_key,fetch,slotScope(actor,r))).slots.filter(s=>s.floor===r.floor&&metres(s.position,parse(r.position))<=12);
   const prior=await currentJob(db,r.id,actor),jid=crypto.randomUUID(),at=new Date(Math.max(Date.now(),Date.parse(r.updated_at)+1,Date.parse(prior?.created_at||'')+1||0)).toISOString(),context=await messagesContext(db,r.id,actor);
   const input={engine:'dots',kind:'conversation',allowed_kinds:['facade','structure','removal'],allow_estimate:true,structure:null,alias:null,permitted_ids:removalCandidates(layer,r).slice(0,10).map(c=>c.id),facade_aliases:slots.map(s=>s.alias),parent_job_id:prior?.id||null,chat_message_id:v.request_id,chat_context:[...context.chat_context,{role:'admin',text,attachment_ids:ids}].slice(-30),chat_file_ids:[...new Set([...context.chat_file_ids,...ids])].slice(-32)};
   const commands=[
@@ -101,7 +102,8 @@ export async function chatConsoleApi(request,env,ctx,{json,bytes,body,me,audit,i
    db.prepare("INSERT INTO work_messages (id,report_id,actor,role,job_id,text,attachment_ids,created_at) SELECT ?,?,?,'admin',?,?,?,? WHERE EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(v.request_id,r.id,actor,jid,text,JSON.stringify(ids),at,jid),
    db.prepare("UPDATE report_jobs SET status='cancelled',updated_at=? WHERE report_id=? AND id<>? AND status IN ('queued','running','awaiting_external','needs_info','draft') AND EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(at,r.id,jid,jid),
    db.prepare("UPDATE proposals SET status='superseded' WHERE report_ids=? AND status IN ('draft','ready') AND EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(JSON.stringify([r.id]),jid),
-   db.prepare("UPDATE reports SET status='accepted',updated_at=?,history=json_insert(history,'$[#]',json(?)) WHERE id=? AND EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(at,JSON.stringify({status:'accepted',at,note:'에비에게 사진·대화 기반 초안 작업을 맡김 · 최종 승인은 사람'}),r.id,jid)
+   db.prepare("UPDATE reports SET status='accepted',updated_at=?,history=json_insert(history,'$[#]',json(?)) WHERE id=? AND EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(at,JSON.stringify({status:'accepted',at,note:'에비에게 사진·대화 기반 초안 작업을 맡김 · 최종 승인은 사람'}),r.id,jid),
+   rebaseSlots(db,r,actor,at,'EXISTS (SELECT 1 FROM report_jobs WHERE id=?)',[jid])
   ];
   const out=await db.batch(commands);if(!out[0].meta.changes)throw fail('다른 창에서 제보가 바뀌었거나 연결·작업 한도에 도달했습니다. 다시 확인하세요.',409);
   await audit(db,actor,'chat.start',r.id,{message:v.request_id,job:jid,scope:'conversation-draft'});return json(await chatDetail(env,r.id,actor),201);

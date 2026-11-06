@@ -5,6 +5,7 @@ import {decodePhoto,aiThumbnail,rectifyFace} from './work-images.js';
 import {requestVision} from './ai.js';
 import {workPhotos} from './work-chat.js';
 import {readDraftArtifact,artifactUsage} from './work-artifacts.js';
+import {slotScope,registrationTarget,registrationGuard,activateSlot,rebaseSlots} from './facade-slots.js';
 const parse=(s,f=null)=>{try{return s?JSON.parse(s):f;}catch{return f;}};
 const now=()=>new Date().toISOString();
 const storageLimit=env=>Math.max(10,Math.min(2000,Number(env.REPORT_STORAGE_MB)||500))*1_000_000;
@@ -19,8 +20,8 @@ const effectsSafe=effects=>Array.isArray(effects)&&effects.length>0&&effects.len
 const guard=effects=>effects.map(()=>"COALESCE((SELECT json_extract(body,?) FROM station_layers WHERE station_key=?),'null')=?").join(' AND ');
 const guardArgs=(effects,key)=>effects.flatMap(e=>[path(e),key,e.before]);
 const auditCommand=(db,actor,action,id,detail,stamp,claim)=>db.prepare("INSERT INTO audit_log (id,actor,action,target,detail,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM proposals WHERE id=? AND status=?)").bind(crypto.randomUUID(),actor,action,id,JSON.stringify(detail),stamp,id,claim);
-export async function workDetail(env,report){
- const rows=(await env.DB.prepare('SELECT * FROM report_jobs WHERE report_id=? ORDER BY created_at DESC,rowid DESC LIMIT 10').bind(report.id).all()).results;
+export async function workDetail(env,report,actor=null){
+ const rows=(await env.DB.prepare('SELECT * FROM report_jobs WHERE report_id=?'+(actor?' AND actor=?':'')+' ORDER BY created_at DESC,rowid DESC LIMIT 10').bind(report.id,...(actor?[actor]:[])).all()).results;
  // Recover a lost/aborted waitUntil as a retryable failure; never silently restart a billable request.
  await env.DB.prepare("UPDATE report_jobs SET status='failed',error=?,updated_at=? WHERE report_id=? AND status IN ('queued','running') AND updated_at<?").bind('처리가 중단됐습니다. 다시 실행해 주세요.',now(),report.id,new Date(Date.now()-180000).toISOString()).run();
  const layer=await layerOf(env.DB,report.station_key);
@@ -57,7 +58,7 @@ export async function runWork(env,id,helpers,external=null){
   if(input.kind==='removal'&&!candidates.length)questions.push('숨길 독립 등록 구조물을 선택해 주세요. 원본 공유 모델·미등록 장애물은 정확한 모델 범위 확인이 필요하며 자동 제거하지 않습니다.');
   let slot=null;
   if(input.kind==='facade'){
-   slot=(await helpers.stationData(env,j.station_key)).slots.find(s=>s.alias===input.alias&&s.floor===r.floor&&metres(s.position,parse(r.position))<=12);
+   slot=(await helpers.stationData(env,j.station_key,fetch,slotScope(j.actor,r))).slots.find(s=>s.alias===input.alias&&s.floor===r.floor&&metres(s.position,parse(r.position))<=12);
    if(!slot)questions.push('제보와 같은 층·12m 이내의 파사드 자리를 선택해 주세요.');
   }
   if(questions.length)return finishJob(env,j,'needs_info',{questions});
@@ -69,7 +70,7 @@ export async function runWork(env,id,helpers,external=null){
   }
   if(input.kind==='conversation'){
    const proposed=JSON.parse(raw);
-   if(proposed.kind==='facade')slot=(await helpers.stationData(env,j.station_key)).slots.find(s=>s.alias===proposed.facade_alias&&input.facade_aliases?.includes(s.alias)&&s.floor===r.floor&&metres(s.position,parse(r.position))<=12);
+   if(proposed.kind==='facade')slot=(await helpers.stationData(env,j.station_key,fetch,slotScope(j.actor,r))).slots.find(s=>s.alias===proposed.facade_alias&&input.facade_aliases?.includes(s.alias)&&s.floor===r.floor&&metres(s.position,parse(r.position))<=12);
   }
   const plan=parseWorkPlan(raw,{kind:j.kind,photos,candidates,slot,input,report:r});
   if(plan.confidence!==null&&plan.confidence<.7&&!plan.questions.length)plan.questions.push('AI 판단이 불확실합니다. 가림 없는 사진과 대상 설명을 보완해 주세요.');
@@ -92,17 +93,18 @@ export async function runWork(env,id,helpers,external=null){
    faces[side]={photo:p.id,quad:out.quad,blurs:out.blurs,levels:true,people:true,mime:out.mime,px,privacy_reviewed:true};
   }
   if(geometry?.parts)for(const part of geometry.parts){const textures=part.type==='plane'?[part.texture]:Object.values(part.facades||{});if(textures.some(side=>!faces[side]))throw Error('구성요소가 실제 제출하지 않은 사진 면을 사용합니다.');}
-  const name=geometry?.name||slot?.name||plan.name||'승인 대상',target={name,alias:slot?.alias||'report-'+r.id,before:slot?.image||null,px:faces.front?.px||null,...(geometry?{structure:geometry}:{})};
+  const name=geometry?.name||slot?.name||plan.name||'승인 대상',target={name,alias:slot?.alias||'report-'+r.id,before:layer.facades?.[slot?.alias]?.front||slot?.image||null,px:faces.front?.px||null,...(geometry?{structure:geometry}:{}),...(slot?registrationTarget(slot):{})};
   if(plan.kind==='structure'){const aid='structure-'+pid;effects.push({collection:'assets',id:aid,before:'null',after:{...geometry,id:aid,hidden:false,facades:Object.fromEntries(Object.keys(faces).map(side=>[side,'/api/public/proposal-images/'+pid+(side==='front'?'':'/'+side)])),proposal:pid},label:name,action:'create'});}
-  if(plan.kind==='facade'){if(!allowedKey(slot.alias))throw Error('파사드 자리 ID가 유효하지 않습니다.');effects.push({collection:'facades',id:slot.alias,before:JSON.stringify(layer.facades?.[slot.alias]??null),after:{front:'/api/public/proposal-images/'+pid,proposal:pid,at:stamp},label:name,action:'replace'});}
+  if(plan.kind==='facade'){if(!allowedKey(slot.alias))throw Error('파사드 자리 ID가 유효하지 않습니다.');effects.push({collection:'facades',id:slot.alias,before:JSON.stringify(layer.facades?.[slot.alias]??null),after:{front:'/api/public/proposal-images/'+pid,proposal:pid,at:stamp,...(target.slot?{slot:target.slot}:{})},label:name,action:'replace'});}
   if(!effectsSafe(effects))throw Error('실행할 검증 대상이 없습니다.');
   target.effects=effects;
-  const meta={by:external?'dots':'server-ai',ai_job:j.id,report_version:j.report_version,faces,summary:plan.summary,provider:external?'dots':env.AI_PROVIDER||'anthropic',model:external?null:env.AI_MODEL,checks:null,...(external?{agent_link:external.link_id}:{}),...(plan.structure?{geometry_source:'agent-estimate',allow_estimate:true,structure_provenance:plan.structure_provenance}:{})};
+  const meta={by:external?'dots':'server-ai',ai_job:j.id,report_version:j.report_version,faces,summary:plan.summary,provider:external?'dots':env.AI_PROVIDER||'anthropic',model:external?null:env.AI_MODEL,checks:null,...(slot?.registration?{facade_provenance:{dimension_basis:slot.dimension_basis,evidence:slot.dimension_evidence,uncertainty:slot.dimension_uncertainty}}:{}),...(external?{agent_link:external.link_id}:{}),...(plan.structure?{geometry_source:'agent-estimate',allow_estimate:true,structure_provenance:plan.structure_provenance}:{})};
   // Recheck access at save time: photo processing may span revocation or expiration.
   const linked=external?" AND EXISTS (SELECT 1 FROM agent_links WHERE id=? AND principal_id=? AND actor=? AND revoked_at IS NULL AND expires_at>?)":'',linkArgs=external?[external.link_id,external.principal,j.actor,now()]:[];
   const anchor=input.chat_message_id?" AND (SELECT id FROM work_messages WHERE report_id=? AND actor=? AND role='admin' ORDER BY rowid DESC LIMIT 1)=?":'',anchorArgs=input.chat_message_id?[r.id,j.actor,input.chat_message_id]:[];
+  const registration=registrationGuard(target,r,j.actor,j.report_version);
   const result=await db.batch([
-   db.prepare("INSERT INTO proposals (id,station_key,report_ids,kind,target,meta,mime,size,confidence,status,reviewer,created_at) SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM report_jobs WHERE id=? AND status='running') AND EXISTS (SELECT 1 FROM reports WHERE id=? AND status='accepted' AND updated_at=?) AND "+usedSql+"+?<=?"+linked+anchor).bind(pid,j.station_key,JSON.stringify([r.id]),plan.kind,JSON.stringify(target),JSON.stringify(meta),faces.front?.mime||null,size,plan.confidence,'draft',j.actor,stamp,j.id,r.id,j.report_version,size,storageLimit(env),...linkArgs,...anchorArgs),
+   db.prepare("INSERT INTO proposals (id,station_key,report_ids,kind,target,meta,mime,size,confidence,status,reviewer,created_at) SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM report_jobs WHERE id=? AND status='running') AND EXISTS (SELECT 1 FROM reports WHERE id=? AND status='accepted' AND updated_at=?) AND "+usedSql+"+?<=?"+linked+anchor+' AND '+registration.sql).bind(pid,j.station_key,JSON.stringify([r.id]),plan.kind,JSON.stringify(target),JSON.stringify(meta),faces.front?.mime||null,size,plan.confidence,'draft',j.actor,stamp,j.id,r.id,j.report_version,size,storageLimit(env),...linkArgs,...anchorArgs,...registration.args),
    db.prepare("UPDATE proposals SET status='superseded' WHERE report_ids=? AND id<>? AND status IN ('draft','ready') AND EXISTS (SELECT 1 FROM proposals WHERE id=?)").bind(JSON.stringify([r.id]),pid,pid),
    db.prepare("UPDATE report_jobs SET status='draft',plan=?,proposal_id=?,updated_at=? WHERE id=? AND status='running' AND EXISTS (SELECT 1 FROM proposals WHERE id=?)").bind(JSON.stringify(plan),pid,stamp,j.id,pid),
    auditCommand(db,j.actor,external?'dots.draft':'ai.draft',pid,{job:j.id,kind:j.kind,targets:effects.map(e=>e.id)},stamp,'draft')
@@ -133,8 +135,8 @@ export async function aiWorkApi(request,env,ctx,{json,body,bytes,me,stationData,
   await audit(db,me.approver,'ai.photo-supplement',r.id,{photo:id,role});return json({id,updated_at:stamp},201);
  }
  if(m){
-  if(m[2]==='cancel'&&request.method==='POST'){const n=await db.prepare("UPDATE report_jobs SET status='cancelled',updated_at=? WHERE id=? AND status IN ('queued','running','awaiting_external')").bind(now(),m[1]).run();await audit(db,me.approver,'ai.cancel',m[1]);return json({cancelled:Boolean(n.meta.changes)});}
-  if(request.method==='GET'){const j=await db.prepare('SELECT * FROM report_jobs WHERE id=?').bind(m[1]).first();if(!j)return json({error:'작업이 없습니다.'},404);const r=await db.prepare('SELECT * FROM reports WHERE id=?').bind(j.report_id).first();await workDetail(env,r);return json({job:jobRow(await db.prepare('SELECT * FROM report_jobs WHERE id=?').bind(j.id).first())});}
+  if(m[2]==='cancel'&&request.method==='POST'){const n=await db.prepare("UPDATE report_jobs SET status='cancelled',updated_at=? WHERE id=? AND actor=? AND status IN ('queued','running','awaiting_external')").bind(now(),m[1],me.approver).run();await audit(db,me.approver,'ai.cancel',m[1]);return json({cancelled:Boolean(n.meta.changes)});}
+  if(request.method==='GET'){const j=await db.prepare('SELECT * FROM report_jobs WHERE id=? AND actor=?').bind(m[1],me.approver).first();if(!j)return json({error:'작업이 없습니다.'},404);const r=await db.prepare('SELECT * FROM reports WHERE id=?').bind(j.report_id).first();await workDetail(env,r,me.approver);return json({job:jobRow(await db.prepare('SELECT * FROM report_jobs WHERE id=?').bind(j.id).first())});}
  }
  if(p==='/api/console/ai-work'&&request.method==='POST'){
   const v=await body(),r=await db.prepare('SELECT * FROM reports WHERE id=?').bind(v.report_id||'').first();
@@ -148,7 +150,8 @@ export async function aiWorkApi(request,env,ctx,{json,body,bytes,me,stationData,
    db.prepare("INSERT INTO report_jobs (id,report_id,station_key,kind,status,report_version,actor,input,questions,created_at,updated_at) SELECT ?,?,?,?,?,?,?,?,'[]',?,? WHERE EXISTS (SELECT 1 FROM reports WHERE id=? AND updated_at=? AND status IN ('review','accepted','held')) AND (SELECT count(*) FROM report_jobs WHERE actor=? AND created_at>?)<40").bind(jid,r.id,r.station_key,input.kind,input.engine==='dots'?'awaiting_external':'queued',stamp,me.approver,JSON.stringify(input),stamp,stamp,r.id,r.updated_at,me.approver,new Date(Date.now()-864e5).toISOString()),
    db.prepare("UPDATE report_jobs SET status='cancelled',updated_at=? WHERE report_id=? AND id<>? AND status IN ('queued','running','awaiting_external') AND EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(stamp,r.id,jid,jid),
    db.prepare("UPDATE proposals SET status='superseded' WHERE report_ids=? AND status IN ('draft','ready') AND EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(JSON.stringify([r.id]),jid),
-   db.prepare("UPDATE reports SET status='accepted',updated_at=?,history=json_insert(history,'$[#]',json(?)) WHERE id=? AND EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(stamp,JSON.stringify({status:'accepted',at:stamp,note:'승인자가 '+input.kind+' AI 초안 작업 시작 승인'}),r.id,jid)
+   db.prepare("UPDATE reports SET status='accepted',updated_at=?,history=json_insert(history,'$[#]',json(?)) WHERE id=? AND EXISTS (SELECT 1 FROM report_jobs WHERE id=?)").bind(stamp,JSON.stringify({status:'accepted',at:stamp,note:'승인자가 '+input.kind+' AI 초안 작업 시작 승인'}),r.id,jid),
+   rebaseSlots(db,r,me.approver,stamp,'EXISTS (SELECT 1 FROM report_jobs WHERE id=?)',[jid])
   ]);
   if(!result[0].meta.changes)return json({error:'다른 창에서 변경됐습니다.'},409);
   await audit(db,me.approver,'ai.start',jid,{report:r.id,kind:input.kind});
@@ -171,9 +174,11 @@ export async function aiWorkApi(request,env,ctx,{json,body,bytes,me,stationData,
   const out=await db.batch(commands);return out[0].meta.changes?json({id:pr.id,status:'reverted',note:'이 작업이 변경한 대상만 복원했습니다. 다른 승인 결과는 유지됩니다.'}):json({error:'승인 후 대상이 다시 변경돼 자동 복원할 수 없습니다. 현재 상태를 검토하세요.'},409);
  }
  if(!r||r.status!=='accepted'||r.updated_at!==meta.report_version)return json({error:'제보가 변경됐습니다. 새 초안을 생성하세요.'},409);
+ if(target.registration&&pr.reviewer!==me.approver)return json({error:'면을 확인한 승인자가 최신 초안을 최종 검토하세요.'},403);
+ const registration=registrationGuard(target,r,me.approver,meta.report_version);
  if(action==='ready'){
   if(pr.status!=='draft'||![v.geometry_checked,v.privacy_checked,v.preview_checked,v.effects_checked].every(x=>x===true))return json({error:'위치·크기, 모든 사진의 개인정보, 결과 모형, 숨김·교체 대상 모두를 확인하세요.'},400);
-  const out=await db.prepare("UPDATE proposals SET status='ready',meta=? WHERE id=? AND status='draft' AND EXISTS (SELECT 1 FROM reports WHERE id=? AND status='accepted' AND updated_at=?) AND "+guard(effects)).bind(JSON.stringify({...meta,checks:{geometry:true,privacy:true,preview:true,effects:true,by:me.approver,at:stamp}}),pr.id,r.id,meta.report_version,...guardArgs(effects,pr.station_key)).run();
+  const out=await db.prepare("UPDATE proposals SET status='ready',meta=? WHERE id=? AND status='draft' AND EXISTS (SELECT 1 FROM reports WHERE id=? AND status='accepted' AND updated_at=?) AND "+guard(effects)+' AND '+registration.sql).bind(JSON.stringify({...meta,checks:{geometry:true,privacy:true,preview:true,effects:true,by:me.approver,at:stamp}}),pr.id,r.id,meta.report_version,...guardArgs(effects,pr.station_key),...registration.args).run();
   if(!out.meta.changes)return json({error:'변경 대상 또는 제보가 바뀌었습니다. 새 초안을 생성하세요.'},409);
   await audit(db,me.approver,'ai.ready',pr.id);return json({id:pr.id,status:'ready'});
  }
@@ -184,7 +189,8 @@ export async function aiWorkApi(request,env,ctx,{json,body,bytes,me,stationData,
   meta.checks={geometry:true,privacy:true,preview:true,effects:true,by:me.approver,at:stamp};
  }else if(pr.status!=='ready'||!meta.checks?.effects)return json({error:'저장된 초안 확인을 먼저 완료하세요.'},409);
  if(stationByKey(pr.station_key)?.locked)return json({error:'이 역은 지도 반영이 잠겨 있습니다.'},409);
- const commands=[db.prepare("UPDATE proposals SET status='applying',meta=? WHERE id=? AND status=? AND EXISTS (SELECT 1 FROM reports WHERE id=? AND status='accepted' AND updated_at=?) AND EXISTS (SELECT 1 FROM report_jobs j WHERE j.id=? AND j.status='draft' AND j.proposal_id=? AND (json_extract(j.input,'$.chat_message_id') IS NULL OR json_extract(j.input,'$.chat_message_id')=(SELECT id FROM work_messages WHERE report_id=j.report_id AND actor=j.actor AND role='admin' ORDER BY rowid DESC LIMIT 1))) AND "+guard(effects)).bind(JSON.stringify(meta),pr.id,pr.status,r.id,meta.report_version,meta.ai_job,pr.id,...guardArgs(effects,pr.station_key))];
+ const commands=[db.prepare("UPDATE proposals SET status='applying',meta=? WHERE id=? AND status=? AND EXISTS (SELECT 1 FROM reports WHERE id=? AND status='accepted' AND updated_at=?) AND EXISTS (SELECT 1 FROM report_jobs j WHERE j.id=? AND j.status='draft' AND j.proposal_id=? AND (json_extract(j.input,'$.chat_message_id') IS NULL OR json_extract(j.input,'$.chat_message_id')=(SELECT id FROM work_messages WHERE report_id=j.report_id AND actor=j.actor AND role='admin' ORDER BY rowid DESC LIMIT 1))) AND "+guard(effects)+' AND '+registration.sql).bind(JSON.stringify(meta),pr.id,pr.status,r.id,meta.report_version,meta.ai_job,pr.id,...guardArgs(effects,pr.station_key),...registration.args)];
+ const activate=activateSlot(db,target,pr.id,stamp);if(activate)commands.push(activate);
  for(const e of effects)commands.push(db.prepare("INSERT INTO station_layers (station_key,revision,body,updated_at) SELECT ?,1,json_set('{}',?,json(?)),? WHERE EXISTS (SELECT 1 FROM proposals WHERE id=? AND status='applying') ON CONFLICT(station_key) DO UPDATE SET revision=station_layers.revision+1,body=json_set(station_layers.body,?,json(?)),updated_at=excluded.updated_at").bind(pr.station_key,path(e),JSON.stringify(e.after),stamp,pr.id,path(e),JSON.stringify(e.after)));
  commands.push(db.prepare("UPDATE reports SET status='applied',reason=NULL,updated_at=?,history=json_insert(history,'$[#]',json(?)) WHERE id=? AND EXISTS (SELECT 1 FROM proposals WHERE id=? AND status='applying')").bind(stamp,JSON.stringify({status:'applied',at:stamp,note:'AI 초안을 승인자가 최종 승인하여 지도 반영'}),r.id,pr.id),auditCommand(db,me.approver,'ai.applied',pr.id,{job:meta.ai_job,targets:effects.map(e=>e.id)},stamp,'applying'),db.prepare("UPDATE proposals SET status='applied',reviewer=?,decided_at=? WHERE id=? AND status='applying'").bind(me.approver,stamp,pr.id));
  const out=await db.batch(commands);return out[0].meta.changes?json({id:pr.id,status:'applied',note:'검증된 변경 대상을 지도에 반영했습니다.'}):json({error:'다른 창에서 대상 또는 제보가 변경됐습니다. 새 초안으로 다시 확인하세요.'},409);

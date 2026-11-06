@@ -1,8 +1,10 @@
 import {stationProject} from './model.js';
 import {stations} from './stations.js';
 export function adaptSeoulSnapshot(s,base){
+ // A writable draft must never retain references into the loaded baseline.
+ s=structuredClone(s);
  const p=stationProject(stations[0]),r=s.register;
- p.name='서울역 · 확정 설정 / 승인된 제보 반영';p.source='seoul-snapshot';p.revision=s.revision;p.notes='관리자 최종 승인한 제보는 지도에 반영됩니다. 원본 설정의 직접 저장·업로드는 차단되며 임시 편집과 JSON 내보내기가 가능합니다.';
+ p.name='서울역 · 개인 편집 초안';p.source='seoul-snapshot';p.revision=s.revision;p.notes='기준 설정과 승인된 제보를 참고한 개인 초안입니다. 초안 저장·사진 업로드는 이 프로젝트에 보관되며, 운영 지도 반영은 제보함에서 운영자가 최종 승인합니다.';
  p.points=s.graph.points.map(v=>({id:v[0],name:v[0],floor:v[1],role:'via',position:v.slice(2,5)}));
  const byId=new Map(p.points.map(p=>[p.id,p]));
  const validation=new Map((s.validation_points||[]).map(v=>[v.review_id,v]));
@@ -19,7 +21,7 @@ export function adaptSeoulSnapshot(s,base){
  p.routes=r.routes.map(v=>({...v,point_ids:[v.from,...v.steps.flatMap(step=>step.kind==='connection'?[step.from,step.to]:[step.point_id]),v.to].filter((id,i,a)=>byId.has(id)&&id!==a[i-1]),raw_point_ids:v.generation?.raw_point_ids}));
  p.assets=s.facades.replacements.map(f=>({id:f.slot.slot_alias,name:(f.current_store_name||f.slot.object_label)+' · '+f.slot.slot_alias,floor:f.slot.floor,position:[f.slot.longitude,f.slot.latitude,f.slot.height_m],size:[f.slot.surface_width_m||3,.1,f.slot.surface_height_m||3],heading:f.slot.camera_heading_deg||0,color:'#73a194',hidden:false,source_id:f.slot.td_id||f.slot.target_asset_id,source_record:true,facades:{front:new URL(f.image_url,base).href},original:f}));
  p.origins=r.origins;p.observations=s.methodology.daily.map((v,i)=>({id:'DAILY:'+i,origin_id:v.origin_id,name:v.origin_name+' · '+v.service_date,date:v.service_date,hour:null,arrivals:Number(v.arrivals||0),departures:Number(v.departures||0),value_class:/OBSERVED/i.test(v.value_class)?'observed':'estimated',method:'확정 가공 데이터 · '+v.value_class+' / 상세 산출 기준은 원점 자료 참조',original:v}));
- p.changes=s.model_configurations||[];p.source_register=r;p.methodology=s.methodology;p.geometry_notes='시설의 reference와 보행 access를 구분합니다. 미등록 위치는 임의로 생성하지 않습니다.';
+ p.changes=s.model_configurations||[];p.source_register=structuredClone(r);p.methodology=s.methodology;p.geometry_notes='시설의 reference와 보행 access를 구분합니다. 미등록 위치는 임의로 생성하지 않습니다.';
  // Retain observed heights for each floor instead of using nominal station heights.
  p.station.floors=[...new Set(p.points.map(v=>v.floor))];
  for(const f of p.station.floors){const z=p.points.filter(v=>v.floor===f&&v.id.startsWith('GRID-')).map(v=>v.position[2]).sort((a,b)=>a-b);if(z.length)p.station.heights[f]=z[Math.floor(z.length/2)];}

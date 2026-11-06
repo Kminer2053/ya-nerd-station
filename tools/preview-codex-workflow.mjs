@@ -76,11 +76,15 @@ try{
  const env={DB:d1Adapter(db),LOCAL_PREVIEW:true,LOCAL_SERVICE_ORIGIN:serviceOrigin,APPROVERS:actor+':'+password,
   UPLOADS:{async put(key,value){files.set(key,new Uint8Array(value));},async get(key){return files.has(key)?{body:files.get(key)}:null;},async delete(key){files.delete(key);}}};
  const serviceEnv={LOCAL_PREVIEW:true,ASSETS:{fetch:assets}};
- // The editor's runtime may load only local reviewed data in this fixture, never upstream/model/production APIs.
+ // Fixture storage stays local. The map-source relay may read only the same
+ // public VWorld tiles used by the browser; model APIs and production storage
+ // remain blocked.
  globalThis.fetch=async(input,options)=>{
   const u=new URL(typeof input==='string'||input instanceof URL?input:input.url);
-  if(u.origin===serviceOrigin&&options?.method!== 'POST')return nativeFetch(input,options);
+  const method=String(options?.method||(typeof input==='object'&&input?.method)||'GET').toUpperCase();
+  if(u.origin===serviceOrigin&&['GET','HEAD'].includes(method))return nativeFetch(input,options);
   if(u.origin===editorOrigin)return nativeFetch(input,options);
+  if(u.origin==='https://cdn.vworld.kr'&&!u.username&&!u.password&&!u.search&&!u.hash&&['GET','HEAD'].includes(method)&&/^\/TDServer\/services\/map4\/7Iuk64K0\/S\d{6}\/(?:tileset\.json|B_\d+_\d+_\d+\.b3dm)$/.test(u.pathname))return nativeFetch(input,options);
   throw Error('로컬 검증에서는 외부 서버 요청을 차단합니다: '+u.hostname);
  };
  const editorVite=await createViteServer({configFile:false,root,publicDir:path.join(root,'public'),appType:'mpa',server:{middlewareMode:true,hmr:false,ws:false,fs:{strict:true,allow:[root]}},optimizeDeps:{noDiscovery:true}});
@@ -122,6 +126,6 @@ try{
  console.log('서울역 미리보기: '+serviceOrigin+'/app/?site=S202103&toolkit=1&toolkitOrigin='+encodeURIComponent(editorOrigin));
  console.log('시험 제보 ID: '+fixture.reportId);
  console.log('시험 자격증명 파일(외부 공유 금지): '+credentialsPath);
- console.log('D1/R2는 메모리에만 있고 외부 API·운영 저장소는 연결하지 않습니다. Ctrl+C로 종료합니다.');
+ console.log('D1/R2는 메모리에만 있습니다. VWorld 원본 지도 조회만 허용하며 외부 AI·운영 저장소는 차단합니다. Ctrl+C로 종료합니다.');
  for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>close().then(()=>process.exit(0)));
 }catch(error){await close();console.error('검증 미리보기 시작 실패:',error.message);process.exitCode=1;}

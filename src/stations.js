@@ -55,8 +55,9 @@ export const ktxCatalog=[
 ];
 export const seoulOrigin=()=>['localhost','127.0.0.1'].includes(location.hostname)?(/^http:\/\/(?:127\.0\.0\.1|localhost):4210$/.test(new URLSearchParams(location.search).get('serviceOrigin')||'')?new URLSearchParams(location.search).get('serviceOrigin'):'http://127.0.0.1:4196'):location.hostname.endsWith('yanerdstation.kr')?'https://seoul.yanerdstation.kr':'https://station-one-collab.soalsebi.chatgpt.site';
 export const stationOf=p=>p.station||stations.find(s=>s.id===p.site_id)||stations[1];
-// Direct project writes are separate from the administrator-approved report layer.
-export const saveLocked=p=>p.site_id==='S202103';
+// Every station supports personal draft saves. Public map changes still need
+// the separate report/proposal approval workflow. Kept for API compatibility.
+export const saveLocked=()=>false;
 export function validateStation(s){
  if(!s||!/^S\d{6}$/.test(s.id)||typeof s.name!=='string'||!s.name.trim()||s.name.length>100||!Array.isArray(s.centre)||s.centre.length!==3||!s.centre.every(Number.isFinite)||s.centre[0]<124||s.centre[0]>132||s.centre[1]<33||s.centre[1]>39)throw Error('역 ID·이름·중심 좌표를 확인하세요.');
  if(!Array.isArray(s.floors)||!s.floors.length||s.floors.length>30||new Set(s.floors).size!==s.floors.length||!s.floors.every(f=>/^(B[1-9]\d?|[1-9]\d?F|RF)$/.test(f)&&Number.isFinite(s.heights?.[f]))||!s.floors.includes(s.default_floor))throw Error('층 목록·기준고도·시작 층을 확인하세요.');
