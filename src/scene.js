@@ -12,6 +12,7 @@ export async function createScene(onPick,{labels={}}={}){
  let native=null,nativePromise=null,project=null,selected=null,frame=null,ready=false,documentReady=false,isSeoul=false,disposed=false,connectedStation=null,renderedFloor=null,floor='2F',grid=true,epoch=0,renderVersion=0,renderQueued=false,renderAbort=null,documentTimer=null,readyTimer=null,sentFloor=null,sentGrid=null,controls=null;
  const pending=new Map(),recentView=new Map();
  const captures=new Map();
+ let openingObserver=null,visibilityListener=null,openingVersion=0;
  function setStatus(phase,text,retry=false){
   if(disposed)return;status.textContent=text;status.dataset&&(status.dataset.mapState=phase);if(controls){controls.hidden=!retry;controls.style.display=retry?'flex':'none';const link=controls.querySelector('a');link.hidden=!isSeoul;link.href=frame?.src||base+'/app/?site=S202103';}
   if(retry&&!controls&&document.createElement){controls=document.createElement('div');controls.style.cssText='position:absolute;z-index:4;top:56px;left:12px;display:flex;gap:8px;align-items:center;background:#fff;padding:8px;border-radius:4px';
@@ -20,7 +21,8 @@ export async function createScene(onPick,{labels={}}={}){
   }
  }
  const clearTimers=()=>{clearTimeout(documentTimer);clearTimeout(readyTimer);documentTimer=readyTimer=null;};
- function removeFrame(replay=false){clearTimers();ready=documentReady=false;renderedFloor=null;sentFloor=sentGrid=null;renderAbort?.abort();renderAbort=null;renderVersion++;frame?.remove();frame=null;pending.clear();if(replay)for(const [key,message]of recentView)pending.set(key,message);for(const c of captures.values()){clearTimeout(c.timer);c.reject(Error('지도 연결이 바뀌었습니다. 배치를 확인한 뒤 다시 캡처하세요.'));}captures.clear();}
+ function cancelOpening(){openingVersion++;openingObserver?.disconnect();openingObserver=null;if(visibilityListener)document.removeEventListener('visibilitychange',visibilityListener);visibilityListener=null;}
+ function removeFrame(replay=false){cancelOpening();clearTimers();ready=documentReady=false;renderedFloor=null;sentFloor=sentGrid=null;renderAbort?.abort();renderAbort=null;renderVersion++;frame?.remove();frame=null;pending.clear();if(replay)for(const [key,message]of recentView)pending.set(key,message);for(const c of captures.values()){clearTimeout(c.timer);c.reject(Error('지도 연결이 바뀌었습니다. 배치를 확인한 뒤 다시 캡처하세요.'));}captures.clear();}
  function resetView(){pending.clear();recentView.clear();images.clear();if(isSeoul&&frame)pending.set('facade',{action:'facade-preview',data:{imageUrl:null}});}
  function clearFacade(){pending.set('facade',{action:'facade-preview',data:{imageUrl:null}});recentView.delete('facade');}
  const post=(action,data={})=>{if(ready&&frame)frame.contentWindow.postMessage({channel:'station-toolkit',action,...data},base);};
@@ -37,8 +39,8 @@ export async function createScene(onPick,{labels={}}={}){
   });
  }
  const queue=(key,action,data={})=>{const message={action,data:structuredClone(data)};pending.set(key,message);recentView.set(key,message);scheduleRender();};
- function openFrame(replay=false){
-  removeFrame(replay);nativeHost.hidden=true;
+ function openFrame(){
+  nativeHost.hidden=true;
   const u=new URL('/app/',base);u.search=new URLSearchParams({site:'S202103',floor,embed:'catalog',toolkit:'1',toolkitOrigin:location.origin,...(base.startsWith('http:')?{scene:'local'}:{})});
   // Give the new frame its destination before insertion. Reusing an initially
   // hidden about:blank frame can leave Chrome's cross-origin navigation pending.
@@ -48,6 +50,15 @@ export async function createScene(onPick,{labels={}}={}){
   documentTimer=setTimeout(()=>{if(frame===next&&!ready)setStatus('failed','서울역 지도 문서 응답이 지연됩니다. 다시 연결하거나 지도를 별도로 열어 주세요.',true);},15000);
   readyTimer=setTimeout(()=>{if(frame===next&&!ready)setStatus('failed',documentReady?'서울역 첫 실내 모델을 표시하지 못했습니다. 초안은 유지됩니다.':'서울역 지도 문서 응답이 지연됩니다. 다시 연결하거나 지도를 별도로 열어 주세요.',true);},45000);
   host.append(next);setStatus('loading',say.loading);
+ }
+ function requestFrame(replay=false){
+  removeFrame(replay);nativeHost.hidden=true;
+  if(typeof IntersectionObserver!=='function'){openFrame();return;}
+  const version=openingVersion,p=project;let intersecting=false;
+  const show=()=>{if(disposed||version!==openingVersion||p!==project||!isSeoul||frame||!intersecting||document.hidden||document.visibilityState==='hidden')return;cancelOpening();openFrame();};
+  openingObserver=new IntersectionObserver(entries=>{if(version!==openingVersion)return;const entry=entries.find(e=>e.target===host);if(entry)intersecting=entry.isIntersecting&&entry.intersectionRatio>0;show();},{threshold:[0,.001]});
+  visibilityListener=show;document.addEventListener('visibilitychange',visibilityListener);
+  setStatus('waiting','배치 지도 영역으로 이동하면 지도를 연결합니다. 초안은 유지됩니다.');openingObserver.observe(host);
  }
  const onMessage=e=>{
   if(disposed||!isSeoul||!frame||e.origin!==base||e.source!==frame.contentWindow||e.data?.channel!=='station-toolkit')return;
@@ -64,17 +75,17 @@ export async function createScene(onPick,{labels={}}={}){
  };
  addEventListener('message',onMessage);
  async function connect(p,force=false){
-  if(disposed)throw Error('닫힌 지도입니다.');const replay=force&&p===project&&isSeoul;if(!replay)resetView();const version=++epoch;project=p;const station=stationOf(p),same=connectedStation===station.id;connectedStation=station.id;
+  if(disposed)throw Error('닫힌 지도입니다.');const replay=force&&p===project&&isSeoul;cancelOpening();if(!replay)resetView();const version=++epoch;project=p;const station=stationOf(p),same=connectedStation===station.id;connectedStation=station.id;
   if(!same||!station.floors.includes(floor))floor=p.source==='sample'?'2F':station.default_floor;document.querySelector('#floor').value=floor;
   isSeoul=p.site_id==='S202103';
-  if(isSeoul){native?.dispose();native=null;nativePromise=null;if(!frame||force)openFrame(replay);else scheduleRender();return;}
+  if(isSeoul){native?.dispose();native=null;nativePromise=null;if(!frame||force)requestFrame(replay);else scheduleRender();return;}
   if(frame)removeFrame();nativeHost.hidden=false;
   const promise=nativePromise||=createNativeScene(onPick,(...args)=>{if(!isSeoul&&!disposed)setStatus(...args);});let value;
   try{value=await promise;}catch(error){if(promise===nativePromise)nativePromise=null;if(!disposed&&!isSeoul&&version===epoch)setStatus('failed',error.message+' · 초안은 유지됩니다.',true);return;}
   if(disposed||isSeoul||promise!==nativePromise){value.dispose();return;}if(version!==epoch)return;
   native=value;await value.connect(p,{floor,force});if(!disposed&&!isSeoul&&version===epoch&&native===value)value.setGrid(grid);
  }
- return {connect,render(p){if(p!==project)resetView();project=p;if(isSeoul)scheduleRender();else native?.render(p);},select(value){selected=value;if(isSeoul)scheduleRender();},
+ return {connect,render(p){const changed=p!==project;if(changed){cancelOpening();resetView();}project=p;if(isSeoul){if(!frame&&changed)requestFrame();else scheduleRender();}else native?.render(p);},select(value){selected=value;if(isSeoul)scheduleRender();},
   async capture(){if(!isSeoul){if(!native?.capture)throw Error('지도 연결을 먼저 확인하세요.');return native.capture();}if(!ready||renderedFloor!==floor)throw Error('지도와 수정안이 표시된 뒤 캡처하세요.');if(captures.size)throw Error('캡처 처리 중입니다.');const request_id=crypto.randomUUID();return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{captures.delete(request_id);reject(Error('지도 캡처 응답이 지연됩니다. 다시 시도하세요.'));},10000);captures.set(request_id,{resolve,reject,timer});post('capture',{request_id});});},
   setFloor(value){if(!project||!stationOf(project).floors.includes(value))return;if(isSeoul&&value!==floor){pending.delete('camera');recentView.delete('camera');clearFacade();}floor=value;if(isSeoul)scheduleRender();else native?.setFloor(value);},
   setGrid(value){grid=!!value;if(isSeoul)scheduleRender();else native?.setGrid(grid);},focus(position){if(isSeoul){clearFacade();queue('camera','focus',{position});}else native?.focus(position);},fit(){if(isSeoul)queue('camera','fit');else native?.fit();},

@@ -41,3 +41,7 @@ summary{cursor:pointer;font-weight:700;line-height:1.7}
 #processingBody .card{margin-top:12px}#captureStatus{align-self:center}
 .batch-panel{padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--paper);font-size:12px;margin:8px 0}
 .batch-panel label{display:block;margin:10px 0;line-height:1.7}.batch-panel textarea,.batch-panel select{width:100%}.batch-panel button{margin:5px 0;min-height:38px}.batch-panel hr{border:0;border-top:1px solid var(--line);margin:16px 0}.batch-run{margin:12px 0;padding-top:10px;border-top:1px solid var(--line)}.batch-run ul{padding-left:16px}.batch-select{font-size:11px;padding:6px 10px;display:block}
+@media(min-width:900px){
+ .inbox:has(>#batchPanel:not([hidden])){grid-template-rows:auto auto auto auto minmax(0,1fr)}
+ .inbox>#batchPanel[open]:not([hidden]){max-height:32dvh;overflow:auto}
+}
