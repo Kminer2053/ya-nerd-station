@@ -10,11 +10,13 @@ import {warp,autoLevels,pixelate,defaultQuad,mapBox} from '../rectify.js';
 import {createScene} from '../scene.js';
 import {workCard,bindWork,stopWorkPoll} from './ai-work.js';
 import {createEbiChat} from './ebi-chat.js';
+import {createBatchControls} from './batch-work.js';
 import {facadeSlotCard,bindFacadeSlot,facadeSlotReview} from './facade-slot.js';
 
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const tone={received:'mute',analyzing:'mute',review:'info',queued:'lime',applied:'ok',held:'warn',duplicate:'mute',rejected:'warn'};
 const params=new URLSearchParams(location.search);
+let savedPreviewEpoch=0;
 let session={approver:null},stage=STAGE_FILTERS.some(f=>f.id===params.get('stage'))?params.get('stage'):'all',list=[],summary={},detail=null,bench=null,scene=null;
 // 로/으로 after a Korean word (ㄹ and open syllables take 로).
 const ro=w=>{const c=w.charCodeAt(w.length-1)-0xAC00;return c>=0&&c<11172&&c%28&&c%28!==8?'으로':'로';};
@@ -25,12 +27,18 @@ async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{...(
  if(!r.ok)throw Object.assign(Error(v.error||'요청을 처리하지 못했어요.'),{status:r.status,body:v});return v;}
 const ebiChat=createEbiChat({api,toast,onWorkChange:async id=>{if(detail?.report.id===id){await openReport(id);await loadList();}},onOpenDraft:async({reportId,proposalId})=>{if(detail?.report.id!==reportId)return;await openReport(reportId);if(detail?.report.id!==reportId)return;const proposal=[...document.querySelectorAll('[data-proposal]')].find(el=>el.dataset.proposal===proposalId);(proposal||$('#proposalList'))?.scrollIntoView({behavior:'smooth',block:'start'});}});
 ebiChat.mount($('#ebiChatPanel'));
+const batchControls=createBatchControls({api,toast,getStation:()=>$('#fStation').value,getSelected:()=>[...document.querySelectorAll('[data-batch-report]:checked')].map(e=>e.dataset.batchReport),onChange:loadList});batchControls.mount($('#batchPanel'));
 addEventListener('pagehide',()=>ebiChat.clear());
+$('#capturePlacement').onclick=async()=>{
+ const button=$('#capturePlacement'),report=detail?.report.id,actor=session.approver,previewEpoch=savedPreviewEpoch;if(!scene||!report)return;button.disabled=true;$('#captureStatus').textContent='배치 화면 캡처 중…';
+ try{const image=await scene.capture();if(detail?.report.id!==report||session.approver!==actor||previewEpoch!==savedPreviewEpoch)throw Error('계정·제보·수정안이 바뀌었습니다. 현재 화면에서 다시 캡처하세요.');const blob=await(await fetch(image)).blob();await ebiChat.attachImage(blob,{name:'지도 배치 확인.jpg',note:'현재 수정안의 지도 배치 화면입니다. 보완할 점: '});$('#captureStatus').textContent='채팅에 첨부했습니다. 수정할 점을 적고 전송하세요.';$('#ebiChatPanel').scrollIntoView({behavior:'smooth',block:'start'});}
+ catch(error){$('#captureStatus').textContent=error.message;toast(error.message);}finally{button.disabled=false;}
+};
 function syncUrl(){const q=new URLSearchParams(),serviceOrigin=new URLSearchParams(location.search).get('serviceOrigin');if(['localhost','127.0.0.1'].includes(location.hostname)&&/^http:\/\/(?:127\.0\.0\.1|localhost):4210$/.test(serviceOrigin||''))q.set('serviceOrigin',serviceOrigin);if($('#fStation').value)q.set('station',$('#fStation').value);q.set('stage',stage);if(detail)q.set('report',detail.report.id);history.replaceState(null,'','?'+q);}
 
 // ---- Approver session (name + password → HttpOnly session cookie)
 async function loadSession(){session=await api('/api/session').catch(()=>({approver:null}));renderWho();}
-function renderWho(){const a=session.approver;$('#who').hidden=!a;$('#who').textContent=a?'승인자 '+a:'';$('#loginBtn').hidden=Boolean(a);$('#logoutBtn').hidden=!a;ebiChat.report(detail,a);}
+function renderWho(){const a=session.approver;$('#who').hidden=!a;$('#who').textContent=a?'승인자 '+a:'';$('#loginBtn').hidden=Boolean(a);$('#logoutBtn').hidden=!a;$('#connectionHost').hidden=!a;batchControls.session(a);ebiChat.report(detail,a);}
 function openLogin(){if($('#loginDialog').open)return;$('#loginError').textContent=session.approvers_configured===false?'승인자 계정이 아직 설정되지 않았어요. 운영자에게 문의하세요.':'';$('#loginDialog').showModal();$('#loginName').focus();}
 $('#loginBtn').onclick=openLogin;$('#loginCancel').onclick=()=>$('#loginDialog').close();
 $('#loginForm').addEventListener('submit',async e=>{e.preventDefault();$('#loginError').textContent='';const btn=$('#loginSubmit');btn.disabled=true;
@@ -46,7 +54,7 @@ async function loadList(){
  const q=new URLSearchParams({stage,station:$('#fStation').value});
  try{const v=await api('/api/console/reports?'+q);list=v.reports;summary=v.summary;}catch(e){toast(e.message);list=[];}
  renderStages();$('#inboxCount').textContent=(STAGE_FILTERS.find(f=>f.id===stage)?.label||'')+' '+list.length+'건';
- $('#inboxList').innerHTML=list.map(r=>'<li><button type="button" data-report="'+r.id+'" class="'+(detail?.report.id===r.id?'on':'')+'">'
+ $('#inboxList').innerHTML=list.map(r=>'<li>'+(session.approver?'<label class="batch-select"><input type="checkbox" data-batch-report="'+esc(r.id)+'" aria-label="이 제보 일괄 작업에 선택"> 선택</label>':'')+'<button type="button" data-report="'+r.id+'" class="'+(detail?.report.id===r.id?'on':'')+'">'
   +(r.cover?'<img class="cover" src="'+esc(r.cover)+'" alt="">':'<span class="cover none" aria-hidden="true">'+(r.hidden?'✕':'')+'</span>')
   +'<span class="body"><span class="row"><b>'+esc(r.type_label)+'</b>'+stagePill(r)+'</span>'
   +'<span class="where">'+esc(r.station_name)+(r.floor?' · '+esc(r.floor):'')+(r.slot?' · '+esc(r.slot.name):'')+'</span>'
@@ -84,17 +92,16 @@ function decideCard(r){if(['queued','applied'].includes(r.status))return '<secti
 function adoptionCard(r){if(!session.approver||!['new','facade','removed'].includes(r.type)||!['review','held','accepted'].includes(r.status))return '';return '<section class="card adoption"><h3>① 제보 채택 → ② 초안·보정 → ③ 최종 승인</h3><p>채택은 작업을 시작한다는 뜻이며 지도에는 반영되지 않습니다. '+(detail.locked?'최종 승인 결과도 반영 대기로 보관됩니다.':'최종 승인 후 공개 지도에 반영됩니다.')+'</p>'+(r.status==='accepted'?'<b>채택됨 · 아래 AI 자동 작업 또는 수동 작업대에서 초안을 준비하세요.</b>':'<button type="button" class="primary" data-decide="accepted">제보 채택 · 작업 시작</button>')+'</section>';}
 const callout='<section class="card callout"><div><b>보정·승인은 승인자가 해요</b><p class="fine">사진 원본 확인, 파사드 정면 보정, 제안 승인과 보류·반려 판단은 로그인한 승인자만 할 수 있어요.</p></div><button type="button" class="primary" data-login>승인자 로그인</button></section>';
 async function openReport(id){
- stopWorkPoll();
+ savedPreviewEpoch++;stopWorkPoll();
  try{detail=await api('/api/console/reports/'+id);}catch(e){toast(e.message);return;}
  bench=null;syncUrl();
  for(const b of document.querySelectorAll('[data-report]'))b.classList.toggle('on',b.dataset.report===id);
  const r=detail.report,a=r.analysis,approver=Boolean(session.approver);
  ebiChat.report(detail,session.approver);
- $('#detailBody').innerHTML='<header class="d-head"><div>'+stagePill(r)+' <b>'+esc(r.type_label)+'</b> · '+esc(r.station_name)+(r.floor?' · '+esc(r.floor):'')+' · '+ago(r.created_at)+(r.user?' · 로그인 제보자':' · 비로그인 제보자')+'</div>'+(a?.confidence!=null?'<div class="confbar" style="--c:'+a.confidence+'"><span>신뢰 '+a.confidence.toFixed(2)+'</span><i></i></div>':'')+'</header>'
-  +'<section class="card progress-card">'+progressLine(r)+(r.reason?'<p class="note-reason">승인자 메모 · '+esc(r.reason)+'</p>':'')+'</section>'
-  +'<section class="card proposal-review"><h3>수정안 미리보기 · 최종 승인</h3><div id="proposalList" class="proposals"></div></section>'
-  +(approver?facadeSlotCard(detail):'')
-  +(approver?'<details class="evidence-fold"><summary>제보 사진·설명 '+r.photos.length+'장 보기</summary>'+contentCard(r)+'</details><details class="evidence-fold"><summary>제보 분류·처리 기록</summary>'+(a?analysisCard(r):'')+decideCard(r)+'</details>':contentCard(r)+(a?analysisCard(r):'')+callout);
+ $('#detailBody').innerHTML='<header class="d-head"><div>'+stagePill(r)+' <b>'+esc(r.type_label)+'</b> · '+esc(r.station_name)+(r.floor?' · '+esc(r.floor):'')+' · '+ago(r.created_at)+'</div></header>'+contentCard(r);
+ $('#connectionHost').hidden=!approver;
+ $('#resultBody').innerHTML='<section class="card proposal-review"><h3>작업 결과 · 수정안 미리보기</h3><div id="proposalList" class="proposals"></div></section>';
+ $('#processingBody').innerHTML=approver?'<details class="evidence-fold"><summary>제보 분류·처리 기록</summary><section class="card progress-card">'+progressLine(r)+(r.reason?'<p class="note-reason">승인자 메모 · '+esc(r.reason)+'</p>':'')+'</section>'+(a?analysisCard(r):'')+decideCard(r)+facadeSlotCard(detail)+'</details>':(a?analysisCard(r):'')+callout;
  renderProposals();
  if(approver)bindFacadeSlot(detail,{api,toast,onSaved:async id=>{await openReport(id);await loadList();}});
  for(const b of document.querySelectorAll('[data-login]'))b.onclick=openLogin;
@@ -103,6 +110,8 @@ async function openReport(id){
   if($('#reanalyze'))$('#reanalyze').onclick=async()=>{try{await api('/api/console/reports/'+r.id+'/analyze',{method:'POST',body:'{}'});toast('다시 정리했어요.');openReport(r.id);}catch(e){toast(e.message);}};
  }
  $('#map3dCard').hidden=true;
+ const latest=detail.proposals.find(p=>['draft','ready'].includes(p.status)&&p.meta?.ai_job);
+ if(approver&&latest)previewSavedProposal(latest,{scroll:false}).catch(e=>toast(e.message));
 }
 // Photo switching: the strip, the caption list, and (for approvers) the correction bench follow the same photo.
 $('#detailBody').addEventListener('click',e=>{const b=e.target.closest('[data-photo]');if(!b||!detail)return;const i=Number(b.dataset.photo),r=detail.report;
@@ -117,9 +126,9 @@ function renderProposals(){
   +artifactReviewMarkup(p.meta,detail.report.photos)
   +facadeSlotReview(p)
   +(p.meta?.structure_provenance?'<div class="estimate-note"><b>추정 · 현장 확인 필요</b><p>근거: '+esc(p.meta.structure_provenance.evidence)+'</p><p>한계: '+esc(p.meta.structure_provenance.uncertainty)+'</p></div>':'')
-  +(approver&&['draft','ready'].includes(p.status)&&detail.report.status==='accepted'&&p.meta?.ai_job?'<div class="draft-checks" data-checks="'+p.id+'"><p>수정할 부분은 왼쪽 대화에 적어 주세요. 새로운 요청을 보내면 이 수정안의 승인은 무효화되고 새 초안으로 이어집니다.</p><button type="button" data-saved-preview="'+p.id+'">지도에서 배치 확인</button><label><input type="checkbox" name="final"> 저장된 수정안의 위치·크기·방향·통행 폭, 모든 보정면의 개인정보, 생성·숨김·교체 대상을 확인했습니다.</label><button type="button" class="primary" data-final="'+p.id+'">최종 승인 · 지도에 반영</button></div>':approver&&['draft','ready'].includes(p.status)?'<div class="estimate-note">이전 수동 초안입니다. 에비에게 대화 작업을 맡기면 새 수정안으로 대체됩니다.</div>':'')
+  +(approver&&['draft','ready'].includes(p.status)&&detail.report.status==='accepted'&&p.meta?.ai_job?'<div class="draft-checks" data-checks="'+p.id+'"><p>수정할 부분은 왼쪽 대화에 적어 주세요. 새로운 요청을 보내면 이 수정안의 승인은 무효화되고 새 초안으로 이어집니다.</p><button type="button" data-saved-preview="'+p.id+'">지도에서 배치 확인</button><label><input type="checkbox" name="final"> 저장된 수정안의 위치·크기·방향·통행 폭, 모든 보정면의 개인정보, 생성·숨김·교체 대상을 확인했습니다.</label><button type="button" class="primary" data-final="'+p.id+'">최종 승인 · 지도에 반영</button></div>':approver&&['draft','ready'].includes(p.status)?'<div class="estimate-note">이전 수동 초안입니다. Codex에게 대화 작업을 맡기면 새 수정안으로 대체됩니다.</div>':'')
   +(approver&&p.meta?.ai_job&&p.status==='applied'&&['structure','removal'].includes(p.kind)?'<button type="button" data-undo="'+p.id+'">이 자동 작업만 되돌리기</button>':'')+'</article>').join('')
-  :'<div class="draft-empty"><b>에비의 수정안이 여기에 나타납니다.</b><p>사진·설명으로 대화하면 작업 종류, 치수 추정, 파사드 보정과 변경 대상이 한 수정안으로 정리됩니다. 등록된 파사드 면이 없다면 아래에서 면의 위치와 규격을 먼저 확인해 주세요.</p><p class="fine">촬영하지 않은 면은 만들지 않습니다. 바닥 데칼은 아직 지원하지 않습니다.</p></div>';
+  :'<div class="draft-empty"><b>Codex의 수정안이 여기에 나타납니다.</b><p>사진·설명으로 대화하면 작업 종류, 치수 추정, 파사드 보정과 변경 대상이 한 수정안으로 정리됩니다. 등록된 파사드 면이 없다면 아래에서 면의 위치와 규격을 먼저 확인해 주세요.</p><p class="fine">촬영하지 않은 면은 만들지 않습니다. 바닥 데칼은 아직 지원하지 않습니다.</p></div>';
  const previous=all.filter(p=>!ps.some(x=>x.id===p.id));if(previous.length)$('#proposalList').insertAdjacentHTML('beforeend','<details class="previous-drafts"><summary>이전 초안 '+previous.length+'개 · 승인 불가</summary><ul>'+previous.map(p=>'<li>'+esc(p.target.name)+' · '+esc(STATUS[p.status]||p.status)+'</li>').join('')+'</ul></details>');
  for(const b of document.querySelectorAll('[data-final]'))b.onclick=async()=>{const checked=b.closest('[data-checks]').querySelector('[name=final]').checked;if(!checked){toast('저장된 수정안과 개인정보·변경 대상을 확인해 주세요.');return;}if(!confirm('지금 표시된 수정안을 최종 승인하여 공개 지도에 반영할까요?'))return;b.disabled=true;try{const v=await api('/api/console/proposals/'+b.dataset.final+'/approve',{method:'POST',body:JSON.stringify({confirm:true,geometry_checked:true,privacy_checked:true,preview_checked:true,effects_checked:true})});toast(v.note);await refresh();}catch(e){toast(e.message);b.disabled=false;}};
  for(const b of document.querySelectorAll('[data-saved-preview]'))b.onclick=()=>previewSavedProposal(all.find(p=>p.id===b.dataset.savedPreview)).catch(e=>toast(e.message));
@@ -229,19 +238,20 @@ function ensureCesium(){if(window.Cesium)return Promise.resolve();return new Pro
 async function previewImages(images){
  const out={};for(const [side,url] of Object.entries(images||{})){const u=new URL(url,location.origin);if(u.origin!==location.origin||!/^\/api\/console\/proposal-images\/[a-f0-9-]{36}(?:\/(?:front|left|right|back))?$/.test(u.pathname))throw Error('현재 수정안의 이미지만 미리볼 수 있습니다.');const response=await fetch(u.href,{credentials:'same-origin'});if(!response.ok)throw Error('초안 이미지를 불러오지 못했습니다.');const blob=await response.blob();if(blob.size>4_800_000||!['image/png','image/jpeg'].includes(blob.type))throw Error('미리보기 이미지 규격을 확인하세요.');out[side]=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('이미지 미리보기 변환 실패'));reader.readAsDataURL(blob);});}return out;
 }
-async function previewSavedProposal(p){
+async function previewSavedProposal(p,{scroll=true}={}){
+ const previewEpoch=++savedPreviewEpoch;
  const r=detail.report,st=connectedStation(r.station_key);if(!p||!st)throw Error('저장된 수정안과 연결된 지도를 확인해 주세요.');
  const preview=p.image?await previewImages(p.images||{front:p.image}):{};
  const id=r.id,slots=p.kind==='facade'?(await api('/api/console/station?key='+encodeURIComponent(r.station_key)+'&report_id='+r.id)).slots:[],slot=p.target.slot||slots.find(s=>s.alias===p.target.alias),geometry=p.target.structure;
- if(detail.report.id!==id)return;
- $('#map3dCard').hidden=false;$('#map3dTitle').textContent='저장된 수정안 · 읽기 전용';$('#map3dNote').textContent='지도 클릭은 수정안을 바꾸지 않습니다. 변경할 점은 에비에게 대화로 요청하세요.';
+ if(detail.report.id!==id||previewEpoch!==savedPreviewEpoch)return;
+ $('#map3dCard').hidden=false;$('#map3dTitle').textContent='저장된 수정안 · 읽기 전용';$('#map3dNote').textContent='지도 클릭은 수정안을 바꾸지 않습니다. 배치를 확인한 뒤 캡처와 설명을 작업 채팅으로 보내 보완을 요청하세요.';
  $('#floor').innerHTML=st.floors.map(f=>'<option>'+f+'</option>').join('');if(st.id!=='S202103')await ensureCesium();
  scene||=await createScene(()=>{},{labels:{loading:'수정안 배치 지도 연결 중…',ready:'저장된 수정안 · 최종 승인 전 · 읽기 전용'}});
  const assets=(p.target.effects||[]).filter(e=>e.collection==='assets').map(e=>({...e.after,...(e.action==='create'?{facades:preview}:{})}));
  const project={schema_version:1,site_id:st.id,station:{...st,default_floor:r.floor},name:st.name,source:st.id==='S202103'?'seoul-snapshot':'vworld',tileset_url:'',assets,points:[],connections:[],routes:[],observations:[],overlays:slot?[{...slot,image:preview.front}]:[]};
  if(scene.stationId!==st.id){await scene.connect(project);scene.stationId=st.id;}else scene.render(project);scene.setFloor(r.floor);scene.setGrid(false);
  const pos=geometry?.position||slot?.position||r.position;if(slot)scene.focusFacade({floor:slot.floor,longitude:pos[0],latitude:pos[1],height:pos[2],cameraHeading:slot.heading,surfaceWidth:slot.surface?.[0],surfaceHeight:slot.surface?.[1],label:slot.name,imageId:slot.alias});else scene.focus(pos);
- if(slot)scene.previewFacade(slot.alias,preview.front);$('#map3dCard').scrollIntoView({behavior:'smooth',block:'nearest'});
+ if(slot)scene.previewFacade(slot.alias,preview.front);if(scroll)$('#map3dCard').scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 // 3D preview on the Seoul scene (service bridge): fly to the slot's front and show the rectified image there.
 async function preview3d(){

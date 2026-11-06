@@ -11,6 +11,7 @@ export async function createScene(onPick,{labels={}}={}){
  const nativeHost=document.querySelector('#nativeMap'),base=seoulOrigin(),images=createPreviewImages({origin:location.origin});
  let native=null,nativePromise=null,project=null,selected=null,frame=null,ready=false,documentReady=false,isSeoul=false,disposed=false,connectedStation=null,renderedFloor=null,floor='2F',grid=true,epoch=0,renderVersion=0,renderQueued=false,renderAbort=null,documentTimer=null,readyTimer=null,sentFloor=null,sentGrid=null,controls=null;
  const pending=new Map();
+ const captures=new Map();
  function setStatus(phase,text,retry=false){
   if(disposed)return;status.textContent=text;status.dataset&&(status.dataset.mapState=phase);if(controls){controls.hidden=!retry;controls.style.display=retry?'flex':'none';const link=controls.querySelector('a');link.hidden=!isSeoul;link.href=frame?.src||base+'/app/?site=S202103';}
   if(retry&&!controls&&document.createElement){controls=document.createElement('div');controls.style.cssText='position:absolute;z-index:4;top:56px;left:12px;display:flex;gap:8px;align-items:center;background:#fff;padding:8px;border-radius:4px';
@@ -19,7 +20,7 @@ export async function createScene(onPick,{labels={}}={}){
   }
  }
  const clearTimers=()=>{clearTimeout(documentTimer);clearTimeout(readyTimer);documentTimer=readyTimer=null;};
- function removeFrame(){clearTimers();ready=documentReady=false;renderedFloor=null;sentFloor=sentGrid=null;renderAbort?.abort();renderAbort=null;renderVersion++;frame?.remove();frame=null;pending.clear();}
+ function removeFrame(){clearTimers();ready=documentReady=false;renderedFloor=null;sentFloor=sentGrid=null;renderAbort?.abort();renderAbort=null;renderVersion++;frame?.remove();frame=null;pending.clear();for(const c of captures.values()){clearTimeout(c.timer);c.reject(Error('지도 연결이 바뀌었습니다. 배치를 확인한 뒤 다시 캡처하세요.'));}captures.clear();}
  const post=(action,data={})=>{if(ready&&frame)frame.contentWindow.postMessage({channel:'station-toolkit',action,...data},base);};
  function scheduleRender(){
   if(disposed||!isSeoul||!project||!ready||renderQueued)return;
@@ -54,6 +55,10 @@ export async function createScene(onPick,{labels={}}={}){
   if(e.data.event==='rendered'&&e.data.floor===floor){renderedFloor=floor;clearTimers();setStatus('ready',say.ready.replace('첫 실내 모델',floor+' 실내 모델'));}
   if(e.data.event==='error'&&(!e.data.floor||e.data.floor===floor)){clearTimers();setStatus('failed','서울역 지도 표시 실패: '+String(e.data.message||'지도 연결 오류').slice(0,220)+' · 초안은 유지됩니다.',true);}
   if(e.data.event==='pick')onPick(e.data.pick);
+  if(e.data.event==='capture'&&captures.has(e.data.request_id)){
+   const c=captures.get(e.data.request_id);captures.delete(e.data.request_id);clearTimeout(c.timer);
+   if(typeof e.data.image==='string'&&e.data.image.length<=5_400_000&&/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(e.data.image))c.resolve(e.data.image);else c.reject(Error(e.data.error||'지도 캡처를 만들지 못했습니다.'));
+  }
  };
  addEventListener('message',onMessage);
  async function connect(p,force=false){
@@ -68,6 +73,7 @@ export async function createScene(onPick,{labels={}}={}){
   native=value;await value.connect(p,{floor,force});if(!disposed&&!isSeoul&&version===epoch&&native===value)value.setGrid(grid);
  }
  return {connect,render(p){project=p;if(isSeoul)scheduleRender();else native?.render(p);},select(value){selected=value;if(isSeoul)scheduleRender();},
+  async capture(){if(!isSeoul){if(!native?.capture)throw Error('지도 연결을 먼저 확인하세요.');return native.capture();}if(!ready||renderedFloor!==floor)throw Error('지도와 수정안이 표시된 뒤 캡처하세요.');if(captures.size)throw Error('캡처 처리 중입니다.');const request_id=crypto.randomUUID();return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{captures.delete(request_id);reject(Error('지도 캡처 응답이 지연됩니다. 다시 시도하세요.'));},10000);captures.set(request_id,{resolve,reject,timer});post('capture',{request_id});});},
   setFloor(value){if(!project||!stationOf(project).floors.includes(value))return;floor=value;if(isSeoul)scheduleRender();else native?.setFloor(value);},
   setGrid(value){grid=!!value;if(isSeoul)scheduleRender();else native?.setGrid(grid);},focus(position){if(isSeoul)queue('camera','focus',{position});else native?.focus(position);},fit(){if(isSeoul)queue('camera','fit');else native?.fit();},
   previewFacade(slotAlias,imageUrl){if(isSeoul)queue('facade','facade-preview',{slotAlias,imageUrl});},focusFacade(value){if(isSeoul){if(stationOf(project).floors.includes(value.floor))floor=value.floor;queue('camera','facade-focus',{focus:value});}else native?.focusFacade(value);},get isSeoul(){return isSeoul;},
@@ -148,6 +154,7 @@ async function createNativeScene(onPick,setStatus){
  function focusFacade(f){if(disposed)return;if(f.floor&&f.floor!==floor){floor=f.floor;document.querySelector('#floor').value=floor;draw();}const h=f.cameraHeading*Math.PI/180,d=Math.max(6,(f.surfaceWidth||3)*1.6),k=111320*Math.cos(f.latitude*Math.PI/180);
   viewer.camera.flyTo({destination:position([f.longitude+Math.sin(h)*d/k,f.latitude+Math.cos(h)*d/111320,f.height+.4]),orientation:{heading:C.Math.toRadians((f.cameraHeading+180)%360),pitch:C.Math.toRadians(-6),roll:0},duration:.9});}
  return{connect,focusFacade,render(p){if(disposed||station&&stationOf(p).id!==station.id)return;project=p;draw();},setFloor(v){if(disposed||!station?.floors.includes(v))return;floor=v;const watch=modelReady;draw();fit();if(watch)monitorFloor();},setGrid(v){if(disposed)return;grid=v;drawGrid();viewer.scene.requestRender();},fit,focus(p){if(!disposed)viewer.camera.flyTo({destination:position([p[0],p[1]-.00025,p[2]+25]),orientation:{heading:0,pitch:C.Math.toRadians(-42),roll:0},duration:.5});},
+  capture(){if(disposed||!modelReady)throw Error('지도 표시를 먼저 확인하세요.');viewer.render();const source=viewer.scene.canvas,k=Math.min(1,2048/Math.max(source.width,source.height)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(source.width*k));canvas.height=Math.max(1,Math.round(source.height*k));canvas.getContext('2d').drawImage(source,0,0,canvas.width,canvas.height);const image=canvas.toDataURL('image/jpeg',.86);if(image.length>5_400_000)throw Error('캡처 용량이 큽니다. 시야를 좁혀 다시 시도하세요.');return image;},
   dispose(){if(disposed)return;disposed=true;loadVersion++;loading?.abort();visibleAbort?.abort();handler.destroy?.();entityPick.clear();viewer.destroy?.();},
  };
 }

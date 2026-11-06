@@ -3,6 +3,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync,readdirSync} from 'node:fs';
 import {encode,decode} from 'fast-png';
 import server from '../server/index.js';
+import {runnerToolDefinitions} from '../server/agent-runner.js';
 import {d1Adapter} from './sqlite-adapter.mjs';
 
 // Every request runs directly against the Worker with memory-only D1/R2.
@@ -87,7 +88,7 @@ try{
  const discover=await rpc('server/discover',{supportedVersions:['2026-07-28']});
  assert.equal(discover.status,200);assert(discover.payload.result.supportedVersions.includes('2026-07-28'));
  const listed=await rpc('tools/list'),names=listed.payload.result.tools.map(item=>item.name).sort();
- assert.deepEqual(names,['toolkit_connect_agent','toolkit_connection_status','toolkit_list_work','toolkit_read_photo','toolkit_read_photo_original','toolkit_read_facade_reference','toolkit_store_draft_artifact','toolkit_read_work','toolkit_read_conversation','toolkit_send_message','toolkit_read_file','toolkit_request_info','toolkit_submit_plan'].sort());
+ assert.deepEqual(names,['toolkit_connect_agent','toolkit_connection_status','toolkit_list_work','toolkit_read_photo','toolkit_read_photo_original','toolkit_read_facade_reference','toolkit_store_draft_artifact','toolkit_read_work','toolkit_read_conversation','toolkit_send_message','toolkit_read_file','toolkit_request_info','toolkit_submit_plan',...runnerToolDefinitions.map(t=>t.name)].sort());
  assert(names.every(name=>!/(approve|ready|publish|create_work|create_queue)/.test(name)),'MCP must only expose connection/read/plan/info operations');
  denied(await tool('toolkit_list_work',{},undefined));
  denied(await rpc('tools/call',{name:'toolkit_connection_status',arguments:{}},{extra:{'oai-authenticated-user-email':'sites-test-dot-a@example.test'}}));
@@ -174,6 +175,12 @@ try{
  const storedRow=db.prepare('SELECT * FROM job_artifacts WHERE id=?').get(stored.artifact_id);assert(files.has(storedRow.storage_key));
  denied(await tool('toolkit_store_draft_artifact',{...artifactInput,provenance:{...artifactInput.provenance,evidence:'같은 ID의 다른 출처'}}));assert(files.has(storedRow.storage_key),'Conflicting retry cannot remove the winning object');
  const genPlan={...plan(artwork.ids),faces:[{side:'front',artifact_id:stored.artifact_id},plan(artwork.ids).faces[1]]};
+ const beforeBadPlan=files.size;
+ denied(await tool('toolkit_submit_plan',{job_id:artJob.id,plan:{...genPlan,faces:[{side:'front',artifact_id:stored.artifact_id},{side:'left',artifact_id:stored.artifact_id}]}}));
+ assert.equal(job(artJob.id).status,'awaiting_external','Correctable image dimensions keep the same job available');assert.equal(files.size,beforeBadPlan,'All image dimensions validate before any proposal writes');
+ assert.match(job(artJob.id).error,/307×1024/);assert.equal(data(await tool('toolkit_read_work',{job_id:artJob.id})).expected_structure_pixels.left[0],307);
+ assert(listRows(data(await tool('toolkit_list_work'))).some(j=>j.job_id===artJob.id),'The correction remains visible to the worker');
+ const corrected=data(await tool('toolkit_store_draft_artifact',{...artifactInput,request_id:crypto.randomUUID()}));genPlan.faces[0].artifact_id=corrected.artifact_id;
  data(await tool('toolkit_submit_plan',{job_id:artJob.id,plan:genPlan}));const artDraft=job(artJob.id),artProposal=db.prepare('SELECT * FROM proposals WHERE id=?').get(artDraft.proposal_id);assert.equal(artDraft.status,'draft');assert.deepEqual(JSON.parse(artProposal.target).structure.parts,parts);assert.equal(JSON.parse(artProposal.meta).faces.front.sha256,stored.sha256);assert.deepEqual(layer(),{});assert.equal((await call('/api/public/proposal-images/'+artProposal.id)).status,404);
  assert.equal((await call('/api/console/proposals/'+artProposal.id+'/approve',{method:'POST',jar:jarA,body:{confirm:true,geometry_checked:true,privacy_checked:true,preview_checked:true,effects_checked:true}})).status,200);
  const appliedArt=layer().assets['structure-'+artProposal.id];assert.deepEqual(appliedArt.parts,parts);assert.equal((await call('/api/public/proposal-images/'+artProposal.id)).status,200);

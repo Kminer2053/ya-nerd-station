@@ -9,32 +9,37 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
+import {CompanionSession,RUNNER_TOOLS,diagnosticCode} from './codex-companion-session.mjs';
 
 export const REQUIRED_TOOLS=['toolkit_connection_status','toolkit_list_work','toolkit_read_work','toolkit_read_conversation','toolkit_read_file','toolkit_send_message','toolkit_read_photo_original','toolkit_read_facade_reference','toolkit_store_draft_artifact','toolkit_submit_plan','toolkit_request_info'];
 export const WORKER_PERMISSION_PROFILE='station_photo_draft_job';
 const MODULE_ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../node_modules');
-const ALLOWED_TOOLS=new Set([...REQUIRED_TOOLS,'toolkit_read_photo','toolkit_read_conversation']);
+const ALLOWED_TOOLS=new Set([...REQUIRED_TOOLS,...RUNNER_TOOLS,'toolkit_read_photo','toolkit_read_conversation']);
 const UUID=/^[a-f0-9-]{36}$/i,MAX_BYTES=4_800_000,MAX_PIXELS=4_194_304;
 const textItem=text=>({type:'inputText',text:typeof text==='string'?text:JSON.stringify(text)});
-const safeError=e=>String(e?.message||e).replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g,'[image bytes]').replace(/Bearer\s+[^\s"']+/gi,'Bearer [redacted]').replace(/https?:\/\/[^\s<>"']+/g,value=>{try{const u=new URL(value);return u.origin+u.pathname+(u.search?'?[redacted]':'');}catch{return '[URL redacted]';}}).slice(0,1500);
+export const safeError=e=>String(e?.message||e).replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g,'[image bytes]').replace(/Bearer\s+[^\s"']+/gi,'Bearer [redacted]').replace(/https?:\/\/[^\s<>"']+/g,value=>{try{const u=new URL(value);return u.origin+u.pathname+(u.search?'?[redacted]':'');}catch{return '[URL redacted]';}}).slice(0,1500);
 export function turnFailure(turn){const e=turn?.error||{},code=e.codexErrorInfo||e.code||null;return safeError('Codex 작업 실패 ('+(turn?.status||'unknown')+'): '+JSON.stringify({message:e.message||'상세 오류 없음',code,...(turn?.workerDiagnostics?.length?{notifications:turn.workerDiagnostics}:{})}));}
 export function startupDiagnostic(stderr,code,signal){const message=safeError(stderr||'추가 진단 없음'),category=/operation not permitted|permission denied|sandbox|read.only/i.test(message)?'sandbox':/config|toml|unknown field|invalid value/i.test(message)?'configuration':/auth|login|credential|401|403/i.test(message)?'authentication':/not found|enoent/i.test(message)?'executable':'startup';return 'Codex app-server 종료 ['+category+'] ('+(signal||code)+'): '+message;}
 const exactKeys=(value,keys)=>{if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!keys.includes(k)))throw Error('허용되지 않은 도구 입력입니다.');};
-const jsonValue=result=>{if(result?.isError)throw Error('편집기 MCP가 요청을 거부했습니다. 작업·연결·최신 대화를 확인해 주세요.');if(result?.structuredContent!==undefined)return result.structuredContent;for(const c of result?.content||[])if(c.type==='text'){try{return JSON.parse(c.text);}catch{}}throw Error('편집기 MCP가 검증 가능한 JSON 응답을 반환하지 않았습니다.');};
+export const jsonValue=result=>{if(result?.isError){const message=(result.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('\n');throw Error(safeError(message||'편집기 MCP가 요청을 거부했습니다. 작업·연결·최신 대화를 확인해 주세요.'));}if(result?.structuredContent!==undefined)return result.structuredContent;for(const c of result?.content||[])if(c.type==='text'){try{return JSON.parse(c.text);}catch{}}throw Error('편집기 MCP가 검증 가능한 JSON 응답을 반환하지 않았습니다.');};
 export function parseArgs(argv){
  const o={mode:'once',workspace:path.resolve('.codex-draft-worker'),codex:'codex',pollMs:30_000,timeoutMs:15*60_000,rpcTimeoutMs:60_000};let modeSeen=false;
  for(let i=0;i<argv.length;i++){
   const a=argv[i];if(['--once','--watch','--check'].includes(a)){if(modeSeen)throw Error('--once, --watch, --check 중 하나만 지정하세요.');o.mode=a.slice(2);modeSeen=true;}
+  else if(a==='--companion')o.companion=true;
   else if(a==='--help'||a==='-h')o.help=true;
-  else if(['--workspace','--codex','--job','--mcp-url','--token-env','--poll-ms','--timeout-ms','--model'].includes(a)){
+  else if(['--workspace','--codex','--job','--mcp-url','--token-env','--poll-ms','--timeout-ms','--model','--report','--label'].includes(a)){
    const value=argv[++i];if(!value||value.startsWith('--'))throw Error(a+' 값을 지정하세요.');
-   const key={'--workspace':'workspace','--codex':'codex','--job':'job','--mcp-url':'mcpUrl','--token-env':'tokenEnv','--poll-ms':'pollMs','--timeout-ms':'timeoutMs','--model':'model'}[a];o[key]=value;
+   const key={'--workspace':'workspace','--codex':'codex','--job':'job','--mcp-url':'mcpUrl','--token-env':'tokenEnv','--poll-ms':'pollMs','--timeout-ms':'timeoutMs','--model':'model','--report':'reportId','--label':'label'}[a];o[key]=value;
   }else throw Error('알 수 없는 옵션: '+a);
  }
  o.workspace=path.resolve(o.workspace);o.pollMs=Number(o.pollMs);o.timeoutMs=Number(o.timeoutMs);
  if(!Number.isSafeInteger(o.pollMs)||o.pollMs<10_000||o.pollMs>3600_000)throw Error('poll-ms는 10000~3600000입니다.');
  if(!Number.isSafeInteger(o.timeoutMs)||o.timeoutMs<10_000||o.timeoutMs>3600_000)throw Error('timeout-ms는 10000~3600000입니다.');
  if(o.job&&!UUID.test(o.job))throw Error('유효한 작업 UUID를 지정하세요.');
+ if(o.reportId&&!UUID.test(o.reportId))throw Error('유효한 제보 UUID를 지정하세요.');
+ if((o.reportId||o.label)&&!o.companion||o.companion&&o.job)throw Error('companion은 --report로 범위를 지정하며 --job과 함께 사용할 수 없습니다.');
+ if(o.label&&o.label.length>80)throw Error('작업자 이름은 80자 이하로 입력하세요.');
  if(o.tokenEnv&&!/^[A-Za-z_][A-Za-z0-9_]*$/.test(o.tokenEnv))throw Error('token-env에는 토큰 값이 아닌 환경변수 이름을 지정하세요.');
  if(o.tokenEnv&&!o.mcpUrl)throw Error('--token-env는 --mcp-url과 함께 사용하세요.');
  if(o.mcpUrl){const u=new URL(o.mcpUrl);if(u.username||u.password||u.search||u.hash||!((u.protocol==='https:')||(u.protocol==='http:'&&u.hostname==='127.0.0.1')))throw Error('MCP 주소는 비밀값 없는 HTTPS 또는 http://127.0.0.1 주소만 허용합니다.');}
@@ -126,7 +131,7 @@ export async function readLocalArtifact(workspace,filename){
 }
 export function stableRequestId(value){const h=createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0,32);return h.slice(0,8)+'-'+h.slice(8,12)+'-5'+h.slice(13,16)+'-a'+h.slice(17,20)+'-'+h.slice(20);}
 export class ToolkitBridge{
- constructor({client,controlThreadId,toolkit,jobId,workspace,saveArtifact=async()=>{}}){Object.assign(this,{client,controlThreadId,toolkit,jobId,workspace,saveArtifact});this.finished=false;this.threadId=null;this.turnId=null;this.generatedImages=new Map();}
+ constructor({client,controlThreadId,toolkit,jobId,workspace,remoteCall,saveArtifact=async()=>{}}){Object.assign(this,{client,controlThreadId,toolkit,jobId,workspace,remoteCall,saveArtifact});this.finished=false;this.threadId=null;this.turnId=null;this.generatedImages=new Map();}
  bindTurn(threadId,turnId){if(typeof threadId!=='string'||!threadId||typeof turnId!=='string'||!turnId||threadId.length>150||turnId.length>150)throw Error('소유한 Codex 턴 ID를 확인하지 못했습니다.');if(this.threadId&&this.threadId!==threadId||this.turnId&&this.turnId!==turnId)throw Error('다른 Codex 턴의 이미지 접근은 허용하지 않습니다.');this.threadId=threadId;this.turnId=turnId;}
  recordGeneratedImage(params){
   const item=params?.item;if(!this.turnId||params.threadId!==this.threadId||params.turnId!==this.turnId||item?.type!=='imageGeneration'||item.status!=='completed'||typeof item.id!=='string'||!item.id||item.id.length>200)return false;
@@ -147,7 +152,7 @@ export class ToolkitBridge{
    event.imported={item_id:event.itemId,local_path:filename,sha256:info.sha256,px:info.px,mime:info.mime,source:'owned-native-image-generation'};return event.imported;
   })();try{return await event.pending;}finally{event.pending=null;}
  }
- async call(name,args){if(!ALLOWED_TOOLS.has(name)||!this.toolkit.tools[name])throw Error('이 작업자에서 허용하지 않는 편집기 도구입니다.');return this.client.request('mcpServer/tool/call',{server:this.toolkit.server,threadId:this.controlThreadId,tool:this.toolkit.tools[name],arguments:args});}
+ async call(name,args){if(!ALLOWED_TOOLS.has(name)||!this.toolkit.tools[name])throw Error('이 작업자에서 허용하지 않는 편집기 도구입니다.');if(this.remoteCall)return this.remoteCall(name,args);return this.client.request('mcpServer/tool/call',{server:this.toolkit.server,threadId:this.controlThreadId,tool:this.toolkit.tools[name],arguments:args});}
  async fresh(){const data=jsonValue(await this.call('toolkit_read_work',{job_id:this.jobId}));if(!['awaiting_external','running'].includes(data.status))throw Error('작업이 이미 처리됐거나 최신 요청으로 바뀌었습니다.');return data;}
  async dynamic(name,args={}){
   if(name==='station_import_generated_image'){
@@ -274,7 +279,7 @@ export async function run(options,{log=value=>process.stdout.write(JSON.stringif
   const event={threadId:p.threadId,turnId:p.turnId,item:{id:item.id,type:item.type,status:item.status,savedPath:item.savedPath}};
   if(!activeBridge.turnId){if(pendingNativeEvents.length<16)pendingNativeEvents.push(event);}else registerNative(event);
  };client.listeners.add(nativeObserver);
- const stop=()=>{if(activeThread)client.request('turn/interrupt',{threadId:activeThread},2000).catch(()=>{});client.close().catch(()=>{});};signal?.addEventListener('abort',stop,{once:true});let unlock=null;
+ const stop=()=>{if(activeThread)client.request('turn/interrupt',{threadId:activeThread},2000).catch(()=>{});client.close().catch(()=>{});};signal?.addEventListener('abort',stop,{once:true});let unlock=null,companion=null;
  try{
   await mkdir(options.workspace,{recursive:true,mode:0o700});
   options.workspace=await realpath(options.workspace);
@@ -282,15 +287,17 @@ export async function run(options,{log=value=>process.stdout.write(JSON.stringif
   const model=chooseModel(await modelInventory(client),options.model);
   const control=await client.request('thread/start',{model:model.model,cwd:options.workspace,ephemeral:true,sandbox:'read-only',approvalPolicy:'on-request'}),controlThreadId=control.thread.id;
   const statuses=await inventory(client,controlThreadId),toolkit=discoverToolkit(statuses),controlBridge=new ToolkitBridge({client,controlThreadId,toolkit});
+  if(options.companion&&RUNNER_TOOLS.some(n=>!toolkit.tools[n]))throw Error('편집기 서버에 개인 동반 작업자 기능이 없습니다. 서버와 작업자를 함께 업데이트하세요.');
   const connection=jsonValue(await controlBridge.call('toolkit_connection_status',{}));
   if(!connection.connected)throw Error('편집기 초안 전용 계정 연결이 없거나 만료됐습니다. 승인자 화면의 일회용 코드를 Codex 앱에서 연결하세요.');
   if(connection.can_approve!==false)throw Error('초안 전용 연결인지 검증하지 못했습니다.');
   const profiles=await client.request('permissionProfile/list',{cwd:options.workspace});if(!profiles.data?.some(p=>p.id===WORKER_PERMISSION_PROFILE&&p.allowed))throw Error('현재 관리 정책에서 사진 작업 전용 권한 프로필을 사용할 수 없습니다.');
   const probe=await client.request('thread/start',{model:model.model,cwd:options.workspace,ephemeral:true,permissions:WORKER_PERMISSION_PROFILE,runtimeWorkspaceRoots:[options.workspace],approvalPolicy:'on-request'});verifyPermissionSelection(probe,options.workspace);
   await probeFilesystemImpl(client);
-  log({event:'checked',cli:version.stdout.trim(),transport:'stdio',server:toolkit.server,connected:true,draft_only:true,model:model.model,model_catalog_available:true,filesystem_read_scope:'job-and-tool-runtime',permission_profile:WORKER_PERMISSION_PROFILE,filesystem_canary:'passed',image_generation:'not_verified',note:'모델은 현재 계정 카탈로그에서 선택했습니다. 실제 실행과 이미지 편집 가능성은 작업 실행에서 확인합니다.'});
+  log({event:'checked',cli:version.stdout.trim(),transport:'stdio',server:toolkit.server,connected:true,draft_only:true,companion_capabilities:options.companion?'available':'not_requested',model:model.model,model_catalog_available:true,filesystem_read_scope:'job-and-tool-runtime',permission_profile:WORKER_PERMISSION_PROFILE,filesystem_canary:'passed',image_generation:'not_verified',note:'모델은 현재 계정 카탈로그에서 선택했습니다. 실제 실행과 이미지 편집 가능성은 작업 실행에서 확인합니다.'});
   if(options.mode==='check')return {status:'checked'};
   unlock=await acquireLock(options.workspace);const stateFile=path.join(options.workspace,'state.json'),state=await readJson(stateFile,{processed:{},artifacts:{}});state.processed||={};state.artifacts||={};
+  if(options.companion){companion=new CompanionSession({call:(name,args)=>controlBridge.call(name,args),jsonValue,workspace:options.workspace,reportId:options.reportId,label:options.label,log,onLost:error=>{log({event:'companion_attention',error_code:diagnosticCode(error)});if(activeThread)client.request('turn/interrupt',{threadId:activeThread},3000).catch(()=>{});}});await companion.start();}
   const scope={anchorJobId:options.job||null,reportId:null};
   const conversation=async(jobId,expectedReport)=>{const c=jsonValue(await controlBridge.call('toolkit_read_conversation',{job_id:jobId}));if(c.connection?.connected===false)throw Error('편집기 연결이 만료 또는 철회됐습니다.');if(!c.report_id||expectedReport&&c.report_id!==expectedReport)throw Error('허용된 제보 대화 범위가 달라졌습니다.');return c;};
   const replacement=async(job,reportId)=>{if(options.mode!=='watch'||signal?.aborted)return null;const link=jsonValue(await controlBridge.call('toolkit_connection_status',{}));if(!link.connected||link.can_approve!==false)throw Error('편집기 연결이 만료 또는 철회됐습니다.');const c=await conversation(job.job_id,reportId);return UUID.test(c.current_job_id||'')&&c.current_job_id!==job.job_id?c:null;};
@@ -298,14 +305,14 @@ export async function run(options,{log=value=>process.stdout.write(JSON.stringif
   do{
    if(signal?.aborted)break;
    if(options.mode==='watch'){const link=jsonValue(await controlBridge.call('toolkit_connection_status',{}));if(!link.connected||link.can_approve!==false)throw Error('편집기 연결이 만료 또는 철회됐습니다.');}
-   const listed=jsonValue(await controlBridge.call('toolkit_list_work',{}));let candidates=listed.jobs||[];
+   const listed=companion?{jobs:[await companion.claim()].filter(Boolean)}:jsonValue(await controlBridge.call('toolkit_list_work',{}));let candidates=listed.jobs||[];
    if(options.mode==='watch'&&scope.anchorJobId){const c=await conversation(scope.anchorJobId,scope.reportId);scope.reportId=c.report_id;const latest=c.current_job_id||scope.anchorJobId;candidates=candidates.filter(j=>j.report_id===scope.reportId&&j.job_id===latest);if(!candidates.length&&c.job?.id===latest)candidates=[{...c.job,job_id:c.job.id,report_id:c.report_id}];}
    const jobs=candidates.filter(j=>j.status==='awaiting_external'&&(options.mode==='watch'||!options.job||j.job_id===options.job));
    const job=jobs.find(j=>!state.processed[j.job_id]||state.processed[j.job_id].updated_at!==j.updated_at);
    if(!job){if(options.job&&options.mode!=='watch')throw Error('지정한 작업이 없거나 이미 처리·변경됐습니다. 편집기에서 최신 작업 ID를 확인하세요.');log({event:'idle',pending:0,...(scope.reportId?{report_id:scope.reportId}:{})});if(options.mode!=='watch')return {status:'idle'};await delay(options.pollMs,undefined,{signal}).catch(e=>{if(e.name!=='AbortError')throw e;});continue;}
    const jobFolder=path.join(options.workspace,job.job_id);await mkdir(path.join(jobFolder,'artifacts'),{recursive:true,mode:0o700});
-   const bridge=new ToolkitBridge({client,controlThreadId,toolkit,jobId:job.job_id,workspace:jobFolder,saveArtifact:async artifact=>{state.artifacts[artifact.request_id]={...artifact,job_id:job.job_id};await writeJson(stateFile,state);}});let work;
-   try{work=await bridge.fresh();}catch(e){const c=await replacement(job,scope.reportId||job.report_id);if(c){await supersede(job,c);continue;}throw e;}
+   const bridge=new ToolkitBridge({client,controlThreadId,toolkit,jobId:job.job_id,workspace:jobFolder,...(companion?{remoteCall:(name,args)=>companion.jobCall(name,args)}:{}),saveArtifact:async artifact=>{state.artifacts[artifact.request_id]={...artifact,job_id:job.job_id};await writeJson(stateFile,state);}});let work;
+   try{work=await bridge.fresh();}catch(e){const c=await replacement(job,scope.reportId||job.report_id);if(c){await companion?.finish('superseded');await supersede(job,c);continue;}if(companion){await companion.finish('failed',e).catch(()=>{});log({event:'companion_job_failed',job_id:job.job_id,error_code:diagnosticCode(e),error:safeError(e)});if(options.mode==='watch')continue;}throw e;}
    // The control thread owns MCP connections; the model thread receives only
    // narrow dynamic bridge tools; configured external MCP/apps are disabled.
    const effective=await client.request('config/read',{cwd:options.workspace,includeLayers:false});
@@ -314,19 +321,21 @@ export async function run(options,{log=value=>process.stdout.write(JSON.stringif
    if(options.mode==='watch'){const threadId=activeThread;monitor=setInterval(async()=>{if(monitorBusy||activeThread!==threadId)return;monitorBusy=true;try{const c=await conversation(job.job_id,work.report_id);if(c.current_job_id&&c.current_job_id!==job.job_id&&activeThread===threadId)await client.request('turn/interrupt',{threadId},3000);}catch{if(activeThread===threadId)await client.request('turn/interrupt',{threadId},3000).catch(()=>{});}finally{monitorBusy=false;}},Math.min(options.pollMs,10_000));monitor.unref();}
    log({event:'started',job_id:job.job_id,thread_id:activeThread});
    try{
+    await companion?.begin();
     const begun=await client.request('turn/start',{threadId:activeThread,model:model.model,...(model.defaultReasoningEffort?{effort:model.defaultReasoningEffort}:{}),permissions:WORKER_PERMISSION_PROFILE,runtimeWorkspaceRoots:[jobFolder],input:[{type:'text',text:'다음 맡겨진 작업을 확인하고 비공개 초안을 제출하거나 보완 질문을 남겨 주세요. 작업 종류·원본·계약은 station_read_work로 다시 확인하세요. 외부 증거 JSON: '+JSON.stringify({job_id:job.job_id,report_id:work.report_id,kind:work.kind})}]});activeBridge.bindTurn(activeThread,begun.turn?.id);flushNative();
     const turn=await waiter.promise;if(turn.status!=='completed')throw Error(turnFailure(turn));
     const actual=jsonValue(await bridge.call('toolkit_read_work',{job_id:job.job_id}));
     const outcome=['draft','needs_info'].includes(actual.status)?actual.status:'needs_attention';state.processed[job.job_id]={updated_at:job.updated_at,outcome,at:new Date().toISOString()};await writeJson(stateFile,state);
-    log({event:'finished',job_id:job.job_id,status:outcome,proposal_id:actual.proposal_id||null,can_approve:false});
     if(outcome==='needs_attention')throw Error('모델 응답은 끝났지만 서버에 초안·보완 질문이 저장되지 않았습니다. Codex 앱에서 이 작업을 이어서 확인하세요.');
-   }catch(e){waiter.cancel();await client.request('turn/interrupt',{threadId:activeThread},3000).catch(()=>{});const c=await replacement(job,work.report_id);if(c){await supersede(job,c);follow=true;}else throw e;}
+    await companion?.finish(outcome);
+    log({event:'finished',job_id:job.job_id,status:outcome,proposal_id:actual.proposal_id||null,can_approve:false});
+   }catch(e){waiter.cancel();await client.request('turn/interrupt',{threadId:activeThread},3000).catch(()=>{});const c=await replacement(job,work.report_id);if(c){await companion?.finish('superseded').catch(()=>{});await supersede(job,c);follow=true;}else if(companion){await companion.finish(signal?.aborted?'interrupted':'failed',e).catch(()=>{});log({event:'companion_job_failed',job_id:job.job_id,error_code:diagnosticCode(e),error:safeError(e)});if(options.mode!=='watch')throw e;}else throw e;}
    finally{if(monitor)clearInterval(monitor);activeBridge=null;activeThread=null;pendingNativeEvents.length=0;}
    if(follow)continue;
    if(options.mode!=='watch')break;
   }while(!signal?.aborted);
   return {status:signal?.aborted?'interrupted':'finished'};
- }finally{signal?.removeEventListener('abort',stop);client.listeners.delete(nativeObserver);if(activeThread)await client.request('turn/interrupt',{threadId:activeThread},3000).catch(()=>{});await client.close();if(unlock)await unlock();}
+ }finally{signal?.removeEventListener('abort',stop);client.listeners.delete(nativeObserver);if(activeThread)await client.request('turn/interrupt',{threadId:activeThread},3000).catch(()=>{});await companion?.close();await client.close();if(unlock)await unlock();}
 }
 
 const HELP=`사용법: node tools/codex-draft-worker.mjs [--check | --once | --watch] [--job UUID]\n  --workspace PATH  원본·결과·중복처리 기록을 보관할 전용 폴더\n  --codex PATH      Codex CLI 실행 파일 (기본 codex)\n  --model NAME      현재 계정 카탈로그의 모델 (생략 시 카탈로그 기본값)\n  --poll-ms N       watch 조회 간격, 최소 10000ms (기본 30000)\n  --timeout-ms N    작업별 제한 시간 (기본 900000)\n  --mcp-url URL    설치 MCP 대신 사용할 HTTPS/127.0.0.1 MCP 주소\n  --token-env NAME  MCP bearer 값을 보관한 환경변수 이름 (값을 argv로 전달하지 않음)\n--check는 모델을 실행하지 않습니다. --once/--watch는 계정의 모델 사용량을 소비합니다.\n--watch --job은 같은 제보의 최신 대화 작업을 이어 처리합니다.\n최종 승인·운영 지도 반영은 이 작업자에서 수행하지 않습니다.\n`;

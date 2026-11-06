@@ -6,9 +6,11 @@ import {slotScope} from './facade-slots.js';
 import {runWork} from './ai-work.js';
 import {removalCandidates,parseWorkPlan,workPrompt} from './work-plan.js';
 import {decodePhoto,aiThumbnail} from './work-images.js';
-import {metres} from '../src/reports.js';
+import {metres,structurePixels} from '../src/reports.js';
 import {chatAgentTool,workPhotos} from './work-chat.js';
-import {storeDraftArtifact} from './work-artifacts.js';
+import {storeDraftArtifact,validatePlanArtifacts} from './work-artifacts.js';
+import {runnerToolDefinitions,runnerAgentTool} from './agent-runner.js';
+import {runDueBatches} from './batch-work.js';
 const parse=(s,f=null)=>{try{return s?JSON.parse(s):f;}catch{return f;}};
 const stamp=()=>new Date().toISOString();
 const uuid={type:'string',pattern:'^[a-f0-9-]{36}$'};
@@ -39,6 +41,7 @@ const definitions=[
  ['toolkit_submit_plan','검증된 JSON 계획을 제출해 비공개 초안을 만듭니다. 승인자가 추정을 명시 허용한 구조물만 근거·불확실성 표시와 함께 크기를 제안할 수 있습니다. 코드·SQL·최종 지도 승인은 받지 않습니다.',schema({job_id:uuid,plan:planSchema},['job_id','plan']),write],
  ['toolkit_request_info','증거가 부족할 때 승인자에게 사진·크기·대상 등의 보완 질문을 남깁니다. 내용을 임의로 추측하거나 지도에 반영하지 않습니다.',schema({job_id:uuid,questions:{type:'array',minItems:1,maxItems:10,items:{type:'string',minLength:1,maxLength:300}}},['job_id','questions']),write]
 ].map(([name,description,inputSchema,annotations])=>({name,description,inputSchema,annotations}));
+definitions.push(...runnerToolDefinitions);
 function keys(args,names){if(!args||typeof args!=='object'||Array.isArray(args)||Object.keys(args).some(k=>!names.includes(k)))throw Error('허용되지 않은 입력 항목입니다.');}
 function jobId(id){if(typeof id!=='string'||!/^[a-f0-9-]{36}$/.test(id))throw Error('작업 ID를 확인하세요.');}
 function fail(message,status=400){const e=Error(message);e.status=status;return e;}
@@ -48,7 +51,8 @@ async function jobContext(env,link,id){
  jobId(id);const j=await env.DB.prepare('SELECT * FROM report_jobs WHERE id=? AND actor=?').bind(id,link.actor).first();
  if(!j||parse(j.input,{}).engine!=='dots')throw fail('에비에게 맡긴 작업이 없거나 접근할 수 없습니다.',404);
  const r=await env.DB.prepare('SELECT * FROM reports WHERE id=?').bind(j.report_id).first();
- if(!r||r.status!=='accepted'||r.updated_at!==j.report_version||['cancelled','failed'].includes(j.status))throw fail('제보가 변경·취소됐습니다. 새 작업을 요청하세요.',409);
+ if(j.status==='failed')throw fail('작업 처리에 실패했습니다: '+String(j.error||'오류 원인 확인 필요')+' 같은 제보에서 재작업을 요청하세요.',409);
+ if(!r||r.status!=='accepted'||r.updated_at!==j.report_version||j.status==='cancelled')throw fail('제보가 변경·취소됐습니다. 새 작업을 요청하세요.',409);
  const input=parse(j.input),photos=await workPhotos(env.DB,j);
  if(input.chat_message_id){const latest=await env.DB.prepare("SELECT id FROM work_messages WHERE report_id=? AND actor=? AND role='admin' ORDER BY rowid DESC LIMIT 1").bind(r.id,j.actor).first();if(latest?.id!==input.chat_message_id)throw fail('관리자 대화가 갱신됐습니다. toolkit_read_conversation으로 최신 작업을 확인하세요.',409);}
  const layer=parse((await env.DB.prepare('SELECT body FROM station_layers WHERE station_key=?').bind(j.station_key).first())?.body,{assets:{},facades:{}}),all=removalCandidates(layer,r),candidates=all.filter(c=>input.permitted_ids.includes(c.id));
@@ -67,6 +71,7 @@ async function callTool(name,args,env,principal,digest,bytes){
  const link=await agentLink(env,principal);
  if(name==='toolkit_connection_status'){keys(args,[]);return result({connected:Boolean(link),label:link?.label||null,expires_at:link?.expires_at||null,can_approve:false,scope:'assigned-drafts-only'});}
  if(!link)throw fail('초안 전용 연결이 없거나 만료됐습니다. Toolkit 승인자 화면에서 연결 코드를 만든 뒤 연결하세요.',403);
+ if(runnerToolDefinitions.some(t=>t.name===name))return runnerAgentTool(name,args,env,link,principal,{beforeClaim:()=>runDueBatches(env,link.actor,{stationData,imageInfo}),execute:(tool,input)=>callTool(tool,input,env,principal,digest,bytes)});
  if(['toolkit_read_conversation','toolkit_send_message','toolkit_read_file'].includes(name)){keys(args,name==='toolkit_send_message'?['job_id','text','request_id','after_message_id']:name==='toolkit_read_file'?['job_id','file_id']:['job_id']);return chatAgentTool(name,args,env,link,principal,imageInfo);}
  if(name==='toolkit_list_work'){keys(args,[]);
   const rows=(await env.DB.prepare("SELECT j.* FROM report_jobs j JOIN reports r ON r.id=j.report_id WHERE j.actor=? AND json_extract(j.input,'$.engine')='dots' AND j.status IN ('awaiting_external','running','draft','needs_info') AND r.status='accepted' AND r.updated_at=j.report_version ORDER BY j.created_at DESC,j.rowid DESC LIMIT 20").bind(link.actor).all()).results;
@@ -74,7 +79,8 @@ async function callTool(name,args,env,principal,digest,bytes){
  }
  keys(args,name==='toolkit_read_facade_reference'?['job_id','alias']:['toolkit_read_photo','toolkit_read_photo_original'].includes(name)?['job_id','photo_id']:name==='toolkit_store_draft_artifact'?['job_id','request_id','source_photo_ids','image','provenance']:name==='toolkit_submit_plan'?['job_id','plan']:name==='toolkit_request_info'?['job_id','questions']:['job_id']);
  const c=await jobContext(env,link,args.job_id),{j,r,input,photos,candidates,slot,slots,questions}=c;
- if(name==='toolkit_read_work')return result({...jobResult(j),station_key:j.station_key,floor:r.floor,position:parse(r.position),description:r.description,place_note:r.place_note,input,photos,candidates,facade_candidates:slots.map(s=>({alias:s.alias,name:s.name,floor:s.floor,position:s.position,heading:s.heading,px:s.px,surface:s.surface,dimension_basis:s.dimension_basis,pending_registration:Boolean(s.registration),...(s.registration?{evidence:s.dimension_evidence,uncertainty:s.dimension_uncertainty}:{}),reference_available:Boolean(s.image)})),slot:slot?{alias:slot.alias,name:slot.name,px:slot.px,surface:slot.surface,dimension_basis:slot.dimension_basis,pending_registration:Boolean(slot.registration)}:null,required_information:questions,instructions:workPrompt({report:r,input,photos,candidates,slot,slots}),plan_schema:planSchema,note:'모든 사진을 read_photo로 실제 확인한 뒤 계획을 제출하세요. 종류·치수·모서리는 대화 작업이면 에비가 제안합니다. 파사드 면 후보는 승인자가 입력한 규격을 유지하고 사진만으로 실측이라 주장하지 않습니다. 최종 승인은 사람만 합니다.'});
+ const expectedPixels=input.structure?Object.fromEntries(['front','left','right','back'].map(side=>[side,structurePixels(input.structure.size,side)])):null;
+ if(name==='toolkit_read_work')return result({...jobResult(j),expected_structure_pixels:expectedPixels,station_key:j.station_key,floor:r.floor,position:parse(r.position),description:r.description,place_note:r.place_note,input,photos,candidates,facade_candidates:slots.map(s=>({alias:s.alias,name:s.name,floor:s.floor,position:s.position,heading:s.heading,px:s.px,surface:s.surface,dimension_basis:s.dimension_basis,pending_registration:Boolean(s.registration),...(s.registration?{evidence:s.dimension_evidence,uncertainty:s.dimension_uncertainty}:{}),reference_available:Boolean(s.image)})),slot:slot?{alias:slot.alias,name:slot.name,px:slot.px,surface:slot.surface,dimension_basis:slot.dimension_basis,pending_registration:Boolean(slot.registration)}:null,required_information:questions,instructions:workPrompt({report:r,input,photos,candidates,slot,slots}),plan_schema:planSchema,note:'모든 사진을 read_photo로 실제 확인한 뒤 계획을 제출하세요. 종류·치수·모서리는 대화 작업이면 에비가 제안합니다. 파사드 면 후보는 승인자가 입력한 규격을 유지하고 사진만으로 실측이라 주장하지 않습니다. 최종 승인은 사람만 합니다.'});
  if(name==='toolkit_read_facade_reference'){
   const g=slots.find(s=>s.alias===args.alias);if(!g)throw fail('이 작업에 허용된 파사드 자리가 아닙니다.',404);
   const approved=parse((await env.DB.prepare('SELECT body FROM station_layers WHERE station_key=?').bind(j.station_key).first())?.body,{}).facades?.[g.alias]?.front,image=approved||g.image;
@@ -112,6 +118,11 @@ async function callTool(name,args,env,principal,digest,bytes){
   if(j.status==='draft'){if(JSON.stringify(parse(j.plan))!==JSON.stringify(plan))throw fail('다른 계획이 이미 초안으로 저장됐습니다. 새 작업으로 요청하세요.',409);return result(jobResult(j));}
   if(j.status!=='awaiting_external')throw fail('이미 처리 중이거나 종료된 작업입니다.',409);
   if(questions.length)return result({job_id:j.id,status:'awaiting_external',required_information:questions,note:'toolkit_request_info로 승인자에게 보완을 요청하세요. 치수나 대상을 만들어 내지 마세요.',can_approve:false});
+  try{if(!plan.questions.length)await validatePlanArtifacts(env,j,plan,input.structure||plan.structure,selected);}
+  catch(e){
+   await env.DB.prepare("UPDATE report_jobs SET error=?,updated_at=? WHERE id=? AND status='awaiting_external' AND report_version=(SELECT updated_at FROM reports WHERE id=?)").bind(e.message,new Date().toISOString(),j.id,r.id).run();
+   throw fail(e.message,400);
+  }
   await runWork(env,j.id,{stationData,imageInfo},{raw,link_id:link.id,principal});
   const current=await env.DB.prepare('SELECT * FROM report_jobs WHERE id=?').bind(j.id).first();
   return result(jobResult(current));
@@ -122,7 +133,7 @@ export async function dotsMcp(request,env,{json,bytes,digest}){
  if(request.method!=='POST')return json({error:'MCP는 POST 요청으로 사용하세요.'},405);
  if(request.headers.get('Origin')&&request.headers.get('Origin')!==new URL(request.url).origin)return json({error:'허용되지 않은 출처입니다.'},403);
  if(!request.headers.get('Content-Type')?.startsWith('application/json'))return json({error:'JSON 요청이 필요합니다.'},415);
- let v;try{const raw=new TextDecoder().decode(await bytes(request,7_000_000));v=JSON.parse(raw);if(raw.length>70000&&!(v.method==='tools/call'&&v.params?.name==='toolkit_store_draft_artifact'))throw Error('계획 본문 용량 초과');}catch{return json({error:'입력 JSON 또는 용량을 확인하세요.'},400);}
+ let v;try{const raw=new TextDecoder().decode(await bytes(request,7_000_000));v=JSON.parse(raw);const artifact=v.method==='tools/call'&&(v.params?.name==='toolkit_store_draft_artifact'||v.params?.name==='toolkit_runner_execute'&&v.params?.arguments?.tool==='toolkit_store_draft_artifact');if(raw.length>70000&&!artifact)throw Error('계획 본문 용량 초과');}catch{return json({error:'입력 JSON 또는 용량을 확인하세요.'},400);}
  if(!v||Array.isArray(v)||v.jsonrpc!=='2.0'||typeof v.method!=='string')return json({error:'JSON-RPC 2.0 요청이 필요합니다.'},400);
  if(v.method==='notifications/initialized')return new Response(null,{status:202});
  if(typeof v.id!=='string'&&!Number.isFinite(v.id))return json({error:'요청 ID가 필요합니다.'},400);

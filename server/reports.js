@@ -7,7 +7,9 @@ import {validateReportInput,validateStructure,structurePixels,validatePhotoView,
 import {analyzeWithAI} from './ai.js';
 import {DAEJEON_CANDIDATES} from '../src/daejeon-candidates.js';
 import {aiWorkApi,workDetail} from './ai-work.js';
-import {dotsConsoleApi} from './dots-auth.js';
+import {dotsConsoleApi,activeApprover} from './dots-auth.js';
+import {runnerConsoleApi} from './agent-runner.js';
+import {batchConsoleApi} from './batch-work.js';
 import {chatConsoleApi} from './work-chat.js';
 import {registeredSlots,slotScope,slotDetail,facadeSlotApi,registrationTarget,registrationGuard,activateSlot,rebaseSlots} from './facade-slots.js';
 
@@ -119,6 +121,7 @@ export async function reportsApi(request,env,ctx,{json,bytes,digest}){
  const u=new URL(request.url),p=u.pathname,method=request.method;
  if(!(p==='/api/session'||p.startsWith('/api/reports')||p.startsWith('/api/public/')||p.startsWith('/api/console/')))return null;
  const me=await who(request,env,digest);
+ if(me.approver&&!activeApprover(env,me.approver))me.approver=null;
  if(p==='/api/session')return json({user_id:me.user,approver:me.approver,local:me.local,approvers_configured:approvers(env).size>0});
  if(!env.DB)return json({error:'제보 저장소 연결을 확인하세요.'},503);
  const db=env.DB,writing=!['GET','HEAD'].includes(method),now=new Date().toISOString();
@@ -268,6 +271,8 @@ export async function reportsApi(request,env,ctx,{json,bytes,digest}){
    if(!me.approver)return needApprover();
    const slotResponse=await facadeSlotApi(request,env,{json,body,me,audit});if(slotResponse)return slotResponse;
    const dotsResponse=await dotsConsoleApi(request,env,{json,body,me,audit});if(dotsResponse)return dotsResponse;
+   const runnerResponse=await runnerConsoleApi(request,env,{json,me});if(runnerResponse)return runnerResponse;
+   const batchResponse=await batchConsoleApi(request,env,{json,body,bytes,me,audit,imageInfo,stationData});if(batchResponse)return batchResponse;
    const chatResponse=await chatConsoleApi(request,env,ctx,{json,body,bytes,me,audit,imageInfo,stationData});if(chatResponse)return chatResponse;
    const workResponse=await aiWorkApi(request,env,ctx,{json,body,bytes,me,stationData,imageInfo,audit});if(workResponse)return workResponse;
    // Facades approved elsewhere (the retired Supabase workbench): stored like an applied proposal, idempotent per source id.

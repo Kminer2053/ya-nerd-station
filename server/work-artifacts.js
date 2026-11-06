@@ -1,10 +1,24 @@
 import {decodePhoto,encodePhoto} from './work-images.js';
 import {IMAGE_LIMITS,validPixels} from '../src/draft-geometry.js';
+import {structurePixels} from '../src/reports.js';
 const parse=(s,f={})=>{try{return JSON.parse(s);}catch{return f;}};
 export const artifactUsage='(SELECT COALESCE(sum(size),0) FROM job_artifacts)';
 const usage='(SELECT COALESCE(sum(size),0) FROM report_photos)+(SELECT COALESCE(sum(size),0) FROM proposals)+(SELECT COALESCE(sum(size),0) FROM work_files)+'+artifactUsage;
 const sha=async b=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',b))].map(n=>n.toString(16).padStart(2,'0')).join('');
 const summary=a=>({artifact_id:a.id,job_id:a.job_id,sha256:a.sha256,px:[a.width,a.height],mime:a.mime,source_photo_ids:parse(a.source_photo_ids,[]),provenance:parse(a.provenance),can_approve:false});
+// Validate correctable plan input before claiming the job or staging proposal files.
+export async function validatePlanArtifacts(env,j,plan,geometry,slot){
+ let total=0;
+ for(const [side,face] of Object.entries(plan.faces)){
+  if(!face.artifact_id)continue;
+  const a=await env.DB.prepare('SELECT width,height,size FROM job_artifacts WHERE id=? AND job_id=? AND actor=? AND report_version=?').bind(face.artifact_id,j.id,j.actor,j.report_version).first();
+  if(!a)throw Error('현재 작업에 올린 이미지가 아닙니다. 이 작업의 이미지 ID로 다시 제출하세요.');
+  const px=plan.kind==='structure'?structurePixels(geometry.size,side):slot.px;
+  if(a.width!==px[0]||a.height!==px[1])throw Error(side+' 이미지가 대상 규격('+px.join('×')+' px)과 다릅니다. 이미지를 맞춰 같은 작업에 다시 제출하세요.');
+  total+=a.size;if(total>16_000_000)throw Error('전체 초안 이미지 용량이 16MB를 넘습니다. 이미지를 줄여 다시 제출하세요.');
+ }
+ for(const part of geometry?.parts||[]){const textures=part.type==='plane'?[part.texture]:Object.values(part.facades||{});if(textures.some(side=>!plan.faces[side]))throw Error('구성요소가 제출하지 않은 사진 면을 사용합니다. 해당 면을 추가해 다시 제출하세요.');}
+}
 export async function storeDraftArtifact(args,env,{j,r,photos},link,principal,imageInfo){
  if(j.status!=='awaiting_external')throw Error('최신 대기 작업에만 이미지를 올릴 수 있습니다.');
  if(!/^[a-f0-9-]{36}$/.test(args.request_id||''))throw Error('이미지 전송 ID를 확인하세요.');

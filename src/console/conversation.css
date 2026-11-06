@@ -38,3 +38,14 @@ summary{cursor:pointer;font-weight:700;line-height:1.7}
  .detail:has(.ebi-chat:not([hidden]))>#map3dCard{grid-column:2}
 }
 @media(max-width:1099px){.detail{padding:12px}.ebi-chat .ebi-log{height:36dvh}.proposal-review{min-height:250px}}
+/* Follow the operator's workflow in one stable vertical sequence on every screen. */
+.console .detail{display:flex;flex-direction:column;gap:18px;align-items:stretch}
+.console .detail>*,#resultBody,#processingBody,#connectionHost{min-width:0;width:100%;box-sizing:border-box}
+.console .detail .ebi-chat{position:relative;top:auto;height:auto;display:block}
+.console .detail .ebi-chat .ebi-body{display:flex;flex-direction:column;min-height:0}
+.console .detail .ebi-chat .ebi-log{flex:none;height:clamp(260px,42dvh,520px)}
+.console .detail #map3dCard{grid-column:auto}
+#connectionHost h3{margin-top:0}#connectionHost li{margin:8px 0;line-height:1.7}
+#processingBody .card{margin-top:12px}#captureStatus{align-self:center}
+.batch-panel{padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--paper);font-size:12px;margin:8px 0}
+.batch-panel label{display:block;margin:10px 0;line-height:1.7}.batch-panel textarea,.batch-panel select{width:100%}.batch-panel button{margin:5px 0;min-height:38px}.batch-panel hr{border:0;border-top:1px solid var(--line);margin:16px 0}.batch-run{margin:12px 0;padding-top:10px;border-top:1px solid var(--line)}.batch-run ul{padding-left:16px}.batch-select{font-size:11px;padding:6px 10px;display:block}
