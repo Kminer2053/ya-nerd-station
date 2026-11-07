@@ -2,6 +2,11 @@ export const RUNNER_ONLINE_MS=45_000;
 
 export const runnerCutoff=at=>new Date(Date.parse(at)-RUNNER_ONLINE_MS).toISOString();
 
+// A successful submission supersedes earlier validation errors, including in old rows.
+export function workError(job){
+ return ['draft','ready','applied'].includes(job.status)?null:job.error;
+}
+
 export function onlineRunner(db,actor,at,reportId=null){
  return db.prepare(`SELECT r.id,r.label,r.phase,r.error_code,r.last_seen_at
   FROM agent_runners r JOIN agent_links a ON a.id=r.link_id

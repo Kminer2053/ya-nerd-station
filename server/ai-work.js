@@ -4,6 +4,7 @@ import {WORK_KINDS,removalCandidates,parseWorkPlan,workPrompt} from './work-plan
 import {decodePhoto,aiThumbnail,rectifyFace} from './work-images.js';
 import {requestVision} from './ai.js';
 import {workPhotos} from './work-chat.js';
+import {workError} from './work-execution.js';
 import {readDraftArtifact,artifactUsage} from './work-artifacts.js';
 import {slotScope,registrationTarget,registrationGuard,activateSlot,rebaseSlots,publicSlot,validateFacadeReframe,privateFacadeTarget} from './facade-slots.js';
 const parse=(s,f=null)=>{try{return s?JSON.parse(s):f;}catch{return f;}};
@@ -11,7 +12,7 @@ const now=()=>new Date().toISOString();
 const storageLimit=env=>Math.max(10,Math.min(2000,Number(env.REPORT_STORAGE_MB)||500))*1_000_000;
 const usedSql='(SELECT COALESCE(sum(size),0) FROM report_photos)+(SELECT COALESCE(sum(size),0) FROM proposals)+(SELECT COALESCE(sum(size),0) FROM work_files)+'+artifactUsage;
 const configured=env=>Boolean(env.AI_API_KEY&&env.AI_MODEL&&['anthropic','openai'].includes(String(env.AI_PROVIDER||'anthropic').toLowerCase()));
-const jobRow=j=>({...j,input:parse(j.input,{}),plan:parse(j.plan),questions:parse(j.questions,[])});
+const jobRow=j=>({...j,input:parse(j.input,{}),plan:parse(j.plan),questions:parse(j.questions,[]),error:workError(j)});
 const object=async(env,key)=>{const o=await env.UPLOADS.get(key);if(!o)throw Error('사진 원본을 찾지 못했습니다.');return new Uint8Array(await new Response(o.body).arrayBuffer());};
 const layerOf=async(db,key)=>parse((await db.prepare('SELECT body FROM station_layers WHERE station_key=?').bind(key).first())?.body,{assets:{},facades:{}});
 const path=e=>'$.'+e.collection+'."'+e.id+'"';
@@ -111,7 +112,7 @@ export async function runWork(env,id,helpers,external=null){
   const result=await db.batch([
    db.prepare("INSERT INTO proposals (id,station_key,report_ids,kind,target,meta,mime,size,confidence,status,reviewer,created_at) SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM report_jobs WHERE id=? AND status='running') AND EXISTS (SELECT 1 FROM reports WHERE id=? AND status='accepted' AND updated_at=?) AND "+usedSql+"+?<=?"+linked+anchor+' AND '+registration.sql).bind(pid,j.station_key,JSON.stringify([r.id]),plan.kind,JSON.stringify(target),JSON.stringify(meta),faces.front?.mime||null,size,plan.confidence,'draft',j.actor,stamp,j.id,r.id,j.report_version,size,storageLimit(env),...linkArgs,...anchorArgs,...registration.args),
    db.prepare("UPDATE proposals SET status='superseded' WHERE report_ids=? AND id<>? AND status IN ('draft','ready') AND EXISTS (SELECT 1 FROM proposals WHERE id=?)").bind(JSON.stringify([r.id]),pid,pid),
-   db.prepare("UPDATE report_jobs SET status='draft',plan=?,proposal_id=?,updated_at=? WHERE id=? AND status='running' AND EXISTS (SELECT 1 FROM proposals WHERE id=?)").bind(JSON.stringify(plan),pid,stamp,j.id,pid),
+   db.prepare("UPDATE report_jobs SET status='draft',plan=?,proposal_id=?,error=NULL,updated_at=? WHERE id=? AND status='running' AND EXISTS (SELECT 1 FROM proposals WHERE id=?)").bind(JSON.stringify(plan),pid,stamp,j.id,pid),
    auditCommand(db,j.actor,external?'dots.draft':'ai.draft',pid,{job:j.id,kind:j.kind,targets:effects.map(e=>e.id)},stamp,'draft')
   ]);
   saved=Boolean(result[0].meta.changes);if(!saved){const current=await db.prepare('SELECT status,updated_at FROM reports WHERE id=?').bind(r.id).first(),stale=!current||current.status!=='accepted'||current.updated_at!==j.report_version;

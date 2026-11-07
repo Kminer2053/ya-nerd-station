@@ -178,10 +178,19 @@ try{
  const beforeBadPlan=files.size;
  denied(await tool('toolkit_submit_plan',{job_id:artJob.id,plan:{...genPlan,faces:[{side:'front',artifact_id:stored.artifact_id},{side:'left',artifact_id:stored.artifact_id}]}}));
  assert.equal(job(artJob.id).status,'awaiting_external','Correctable image dimensions keep the same job available');assert.equal(files.size,beforeBadPlan,'All image dimensions validate before any proposal writes');
- assert.match(job(artJob.id).error,/307×1024/);assert.equal(data(await tool('toolkit_read_work',{job_id:artJob.id})).expected_structure_pixels.left[0],307);
+ assert.match(job(artJob.id).error,/307×1024/);
+ const retryableWork=data(await tool('toolkit_read_work',{job_id:artJob.id}));
+ assert.match(retryableWork.error,/307×1024/);assert.equal(retryableWork.expected_structure_pixels.left[0],307);
  assert(listRows(data(await tool('toolkit_list_work'))).some(j=>j.job_id===artJob.id),'The correction remains visible to the worker');
  const corrected=data(await tool('toolkit_store_draft_artifact',{...artifactInput,request_id:crypto.randomUUID()}));genPlan.faces[0].artifact_id=corrected.artifact_id;
  data(await tool('toolkit_submit_plan',{job_id:artJob.id,plan:genPlan}));const artDraft=job(artJob.id),artProposal=db.prepare('SELECT * FROM proposals WHERE id=?').get(artDraft.proposal_id);assert.equal(artDraft.status,'draft');assert.deepEqual(JSON.parse(artProposal.target).structure.parts,parts);assert.equal(JSON.parse(artProposal.meta).faces.front.sha256,stored.sha256);assert.deepEqual(layer(),{});assert.equal((await call('/api/public/proposal-images/'+artProposal.id)).status,404);
+ assert.equal(artDraft.error,null,'Successful resubmission clears the stored validation error');
+ db.prepare('UPDATE report_jobs SET error=? WHERE id=?').run(retryableWork.error,artJob.id);
+ assert.equal(data(await tool('toolkit_read_work',{job_id:artJob.id})).error,null,'Legacy draft is error-free when read by the worker');
+ const legacyChat=await (await call('/api/console/reports/'+artwork.id+'/chat',{jar:jarA})).json();
+ assert.equal(legacyChat.job.id,artJob.id);assert.equal(legacyChat.job.error,null,'Legacy draft is error-free in the approver chat');
+ const legacyDetail=await (await call('/api/console/reports/'+artwork.id,{jar:jarA})).json();
+ assert.equal(legacyDetail.work.jobs.find(entry=>entry.id===artJob.id).error,null);
  assert.equal((await call('/api/console/proposals/'+artProposal.id+'/approve',{method:'POST',jar:jarA,body:{confirm:true,geometry_checked:true,privacy_checked:true,preview_checked:true,effects_checked:true}})).status,200);
  const appliedArt=layer().assets['structure-'+artProposal.id];assert.deepEqual(appliedArt.parts,parts);assert.equal((await call('/api/public/proposal-images/'+artProposal.id)).status,200);
  // Restore only this fixture's layer so the existing isolation checks remain exact.

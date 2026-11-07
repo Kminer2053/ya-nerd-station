@@ -5,7 +5,7 @@ import {unzipSync} from 'fflate';
 import {removalCandidates} from './work-plan.js';
 import {metres} from '../src/reports.js';
 import {slotScope,rebaseSlots,publicSlot} from './facade-slots.js';
-import {onlineRunner,runnerCutoff,workExecution} from './work-execution.js';
+import {onlineRunner,runnerCutoff,workError,workExecution} from './work-execution.js';
 const parse=(s,f=null)=>{try{return s?JSON.parse(s):f;}catch{return f;}};
 const stamp=()=>new Date().toISOString();
 const isId=s=>typeof s==='string'&&/^[a-f0-9-]{36}$/.test(s);
@@ -17,7 +17,7 @@ const quota=env=>Math.max(10,Math.min(2000,Number(env.REPORT_STORAGE_MB)||500))*
 const totalSql='(SELECT COALESCE(sum(size),0) FROM report_photos)+(SELECT COALESCE(sum(size),0) FROM proposals)+(SELECT COALESCE(sum(size),0) FROM work_files)';
 const currentJob=async(db,report,actor)=>db.prepare("SELECT * FROM report_jobs WHERE report_id=? AND actor=? AND json_extract(input,'$.engine')='dots' ORDER BY created_at DESC,rowid DESC LIMIT 1").bind(report,actor).first();
 const fileRow=f=>({id:f.id,name:f.name,mime:f.mime,size:f.size,url:'/api/console/reports/'+f.report_id+'/chat/files/'+f.id});
-const jobRow=j=>j?{id:j.id,kind:j.kind,status:j.status,report_version:j.report_version,questions:parse(j.questions,[]),error:j.error,proposal_id:j.proposal_id}:null;
+const jobRow=j=>j?{id:j.id,kind:j.kind,status:j.status,report_version:j.report_version,questions:parse(j.questions,[]),error:workError(j),proposal_id:j.proposal_id}:null;
 const lastAdmin=async(db,r,actor)=>db.prepare("SELECT id FROM work_messages WHERE report_id=? AND actor=? AND role='admin' ORDER BY rowid DESC LIMIT 1").bind(r,actor).first();
 export async function workPhotos(db,j){
  const photos=(await db.prepare('SELECT id,mime,width,height,view_role,caption FROM report_photos WHERE report_id=? ORDER BY created_at,rowid').bind(j.report_id).all()).results;

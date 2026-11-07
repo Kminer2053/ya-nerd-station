@@ -11,6 +11,7 @@ import {chatAgentTool,workPhotos} from './work-chat.js';
 import {storeDraftArtifact,validatePlanArtifacts} from './work-artifacts.js';
 import {runnerToolDefinitions,runnerAgentTool} from './agent-runner.js';
 import {runDueBatches} from './batch-work.js';
+import {workError} from './work-execution.js';
 const parse=(s,f=null)=>{try{return s?JSON.parse(s):f;}catch{return f;}};
 const stamp=()=>new Date().toISOString();
 const uuid={type:'string',pattern:'^[a-f0-9-]{36}$'};
@@ -47,7 +48,7 @@ function keys(args,names){if(!args||typeof args!=='object'||Array.isArray(args)|
 function jobId(id){if(typeof id!=='string'||!/^[a-f0-9-]{36}$/.test(id))throw Error('작업 ID를 확인하세요.');}
 function fail(message,status=400){const e=Error(message);e.status=status;return e;}
 const result=data=>({content:[{type:'text',text:JSON.stringify(data)}],structuredContent:data});
-const jobResult=j=>({job_id:j.id,report_id:j.report_id,kind:j.kind,status:j.status,proposal_id:j.proposal_id,questions:parse(j.questions,[]),error:j.error,updated_at:j.updated_at,can_approve:false});
+const jobResult=j=>({job_id:j.id,report_id:j.report_id,kind:j.kind,status:j.status,proposal_id:j.proposal_id,questions:parse(j.questions,[]),error:workError(j),updated_at:j.updated_at,can_approve:false});
 async function jobContext(env,link,id){
  jobId(id);const j=await env.DB.prepare('SELECT * FROM report_jobs WHERE id=? AND actor=?').bind(id,link.actor).first();
  if(!j||parse(j.input,{}).engine!=='dots')throw fail('연결 작업자에게 맡긴 작업이 없거나 접근할 수 없습니다.',404);
