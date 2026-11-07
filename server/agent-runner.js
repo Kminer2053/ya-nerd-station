@@ -37,7 +37,8 @@ async function validLease(env,runner,v){
 async function assertLink(env,link,principal){const r=await env.DB.prepare('SELECT id FROM agent_links WHERE id=? AND actor=? AND principal_id=? AND revoked_at IS NULL AND expires_at>?').bind(link.id,link.actor,principal,now()).first();if(!r)throw fail('초안 전용 연결이 만료·해제됐습니다.',403);}
 export async function runnerAgentTool(name,v,env,link,principal,{execute,beforeClaim}={}){
  const def=runnerToolDefinitions.find(d=>d.name===name);if(!def)return null;keys(v,Object.keys(def.inputSchema.properties));await assertLink(env,link,principal);id(v.runner_id);
- const at=now(),db=env.DB;
+ const db=env.DB;
+ let at=now();
  if(name==='toolkit_runner_register'){
   if(typeof v.label!=='string'||!v.label.trim()||v.label.length>80)throw fail('개인 작업자 이름은 1~80자로 입력하세요.');if(v.report_id)id(v.report_id);
   if(v.report_id&&!await db.prepare("SELECT r.id FROM reports r JOIN report_jobs j ON j.report_id=r.id WHERE r.id=? AND j.actor=? AND r.status='accepted' AND json_extract(j.input,'$.engine')='dots' LIMIT 1").bind(v.report_id,link.actor).first())throw fail('맡긴 제보 범위가 아닙니다.',404);
@@ -70,7 +71,11 @@ export async function runnerAgentTool(name,v,env,link,principal,{execute,beforeC
  }
  if(name==='toolkit_runner_claim'){
   id(v.request_id);if(typeof v.lease_token!=='string'||!/^[a-f0-9]{64}$/.test(v.lease_token))throw fail('작업 임대 인증을 확인하세요.');const tokenHash=await hash(v.lease_token);
-  await beforeClaim?.();
+  if(!runner.report_id&&beforeClaim){
+   await beforeClaim();
+   await assertLink(env,link,principal);
+   at=now();
+  }
   const prior=await db.prepare('SELECT * FROM agent_runner_leases WHERE runner_id=? AND request_id=?').bind(runner.id,v.request_id).first();
   if(prior){if(prior.token_hash!==tokenHash)throw fail('동일 요청의 임대 인증이 다릅니다.',409);if(prior.status!=='active'||prior.lease_until<=at)return result({job:null,attention:true,reason:'lease_ended',can_approve:false});let j;try{j=await context(env,runner,prior.job_id);}catch(e){if(e.status!==409)throw e;await db.prepare("UPDATE agent_runner_leases SET status='finished',outcome='superseded',updated_at=? WHERE job_id=? AND runner_id=? AND status='active'").bind(at,prior.job_id,runner.id).run();return result({job:null,attention:true,reason:'latest_job_changed',can_approve:false});}return result({job:{job_id:j.id,report_id:j.report_id,status:j.status,updated_at:j.updated_at,already_started:Boolean(prior.started_at)},lease_until:prior.lease_until,can_approve:false});}
   const until=new Date(Date.now()+LEASE_MS).toISOString();

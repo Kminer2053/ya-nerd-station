@@ -18,6 +18,8 @@ const tone={received:'mute',analyzing:'mute',review:'info',queued:'lime',applied
 const params=new URLSearchParams(location.search);
 let savedPreviewEpoch=0;
 let session={approver:null},stage=STAGE_FILTERS.some(f=>f.id===params.get('stage'))?params.get('stage'):'all',list=[],summary={},detail=null,bench=null,scene=null;
+const batchSelection=new Set();
+let batchActor=null,listRequest=0;
 // 로/으로 after a Korean word (ㄹ and open syllables take 로).
 const ro=w=>{const c=w.charCodeAt(w.length-1)-0xAC00;return c>=0&&c<11172&&c%28&&c%28!==8?'으로':'로';};
 const ago=iso=>{const m=Math.round((Date.now()-Date.parse(iso))/60000);return m<1?'방금':m<60?m+'분 전':m<1440?Math.round(m/60)+'시간 전':Math.round(m/1440)+'일 전';};
@@ -27,7 +29,17 @@ async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{...(
  if(!r.ok)throw Object.assign(Error(v.error||'요청을 처리하지 못했어요.'),{status:r.status,body:v});return v;}
 const ebiChat=createEbiChat({api,toast,onWorkChange:async id=>{if(detail?.report.id===id){await openReport(id);await loadList();}},onOpenDraft:async({reportId,proposalId})=>{if(detail?.report.id!==reportId)return;await openReport(reportId);if(detail?.report.id!==reportId)return;const proposal=[...document.querySelectorAll('[data-proposal]')].find(el=>el.dataset.proposal===proposalId);(proposal||$('#proposalList'))?.scrollIntoView({behavior:'smooth',block:'start'});}});
 ebiChat.mount($('#ebiChatPanel'));
-const batchControls=createBatchControls({api,toast,getStation:()=>$('#fStation').value,getSelected:()=>[...document.querySelectorAll('[data-batch-report]:checked')].map(e=>e.dataset.batchReport),onChange:loadList});batchControls.mount($('#batchPanel'));
+const selectableReports=()=>list.filter(report=>report.batch_eligible).map(report=>report.id);
+const batchControls=createBatchControls({
+ api,toast,getStation:()=>$('#fStation').value,getSelected:()=>[...batchSelection],getSelectable:selectableReports,
+ onSelectAll(){for(const id of selectableReports())batchSelection.add(id);syncBatchSelection();},
+ onClear(){batchSelection.clear();syncBatchSelection();},onChange:loadList,
+});
+batchControls.mount($('#batchPanel'));
+function syncBatchSelection(){
+ for(const input of document.querySelectorAll('[data-batch-report]'))input.checked=batchSelection.has(input.dataset.batchReport);
+ batchControls.selectionChanged();
+}
 addEventListener('pagehide',()=>ebiChat.clear());
 $('#capturePlacement').onclick=async()=>{
  const button=$('#capturePlacement'),report=detail?.report.id,actor=session.approver,previewEpoch=savedPreviewEpoch;if(!scene||!report)return;button.disabled=true;$('#captureStatus').textContent='배치 화면 캡처 중…';
@@ -38,7 +50,8 @@ function syncUrl(){const q=new URLSearchParams(),serviceOrigin=new URLSearchPara
 
 // ---- Approver session (name + password → HttpOnly session cookie)
 async function loadSession(){session=await api('/api/session').catch(()=>({approver:null}));renderWho();}
-function renderWho(){const a=session.approver;$('#who').hidden=!a;$('#who').textContent=a?'승인자 '+a:'';$('#loginBtn').hidden=Boolean(a);$('#logoutBtn').hidden=!a;$('#connectionHost').hidden=!a;batchControls.session(a);ebiChat.report(detail,a);}
+function renderWho(){const a=session.approver;if(a!==batchActor){batchActor=a;batchSelection.clear();}
+ $('#who').hidden=!a;$('#who').textContent=a?'승인자 '+a:'';$('#loginBtn').hidden=Boolean(a);$('#logoutBtn').hidden=!a;$('#connectionHost').hidden=!a;batchControls.session(a);ebiChat.report(detail,a);}
 function openLogin(){if($('#loginDialog').open)return;$('#loginError').textContent=session.approvers_configured===false?'승인자 계정이 아직 설정되지 않았어요. 운영자에게 문의하세요.':'';$('#loginDialog').showModal();$('#loginName').focus();}
 $('#loginBtn').onclick=openLogin;$('#loginCancel').onclick=()=>$('#loginDialog').close();
 $('#loginForm').addEventListener('submit',async e=>{e.preventDefault();$('#loginError').textContent='';const btn=$('#loginSubmit');btn.disabled=true;
@@ -51,19 +64,29 @@ async function refresh(){await loadList();if(detail)await openReport(detail.repo
 // ---- Inbox: stage bar (counts per progress bucket) and rows with a compact progress line
 function renderStages(){$('#stageBar').innerHTML=STAGE_FILTERS.map(f=>'<button type="button" data-stage="'+f.id+'" class="stage s-'+f.id+'" aria-pressed="'+(stage===f.id)+'"><b>'+(summary[f.id]??0)+'</b><span>'+esc(f.label)+'</span></button>').join('');}
 async function loadList(){
- const q=new URLSearchParams({stage,station:$('#fStation').value});
- try{const v=await api('/api/console/reports?'+q);list=v.reports;summary=v.summary;}catch(e){toast(e.message);list=[];}
+ const q=new URLSearchParams({stage,station:$('#fStation').value}),revision=++listRequest;
+ try{const v=await api('/api/console/reports?'+q);if(revision!==listRequest)return;list=v.reports;summary=v.summary;}
+ catch(e){if(revision!==listRequest)return;toast(e.message);list=[];}
+ const allowed=new Set(selectableReports());
+ for(const id of batchSelection)if(!allowed.has(id))batchSelection.delete(id);
  renderStages();$('#inboxCount').textContent=(STAGE_FILTERS.find(f=>f.id===stage)?.label||'')+' '+list.length+'건';
- $('#inboxList').innerHTML=list.map(r=>'<li>'+(session.approver?'<label class="batch-select"><input type="checkbox" data-batch-report="'+esc(r.id)+'" aria-label="이 제보 일괄 작업에 선택"> 선택</label>':'')+'<button type="button" data-report="'+r.id+'" class="'+(detail?.report.id===r.id?'on':'')+'">'
+ $('#inboxList').innerHTML=list.map(r=>'<li>'+(session.approver&&r.batch_eligible?'<label class="batch-select"><input type="checkbox" data-batch-report="'+esc(r.id)+'" aria-label="'+esc(r.station_name+' '+(r.floor||'')+' '+r.type_label+' 제보 일괄 작업에 선택')+'"> 선택</label>':'')+'<button type="button" data-report="'+r.id+'" class="'+(detail?.report.id===r.id?'on':'')+'">'
   +(r.cover?'<img class="cover" src="'+esc(r.cover)+'" alt="">':'<span class="cover none" aria-hidden="true">'+(r.hidden?'✕':'')+'</span>')
   +'<span class="body"><span class="row"><b>'+esc(r.type_label)+'</b>'+stagePill(r)+'</span>'
   +'<span class="where">'+esc(r.station_name)+(r.floor?' · '+esc(r.floor):'')+(r.slot?' · '+esc(r.slot.name):'')+'</span>'
   +'<span class="desc">'+esc(r.hidden?'반려된 제보예요':(r.description||r.place_note||'설명 없음'))+'</span>'+progressLine(r,{compact:true})
   +'<span class="row fine"><span>사진 '+r.photo_count+'장</span>'+(r.group?.size>1?'<span>같은 곳 '+r.group.size+'건</span>':'')+'<span>'+ago(r.created_at)+'</span></span></span></button></li>').join('')||'<li class="empty">이 단계의 제보가 없어요.</li>';
+ syncBatchSelection();
 }
-$('#stageBar').addEventListener('click',e=>{const b=e.target.closest('[data-stage]');if(!b)return;stage=b.dataset.stage;syncUrl();loadList();});
+function changeListScope(){batchSelection.clear();list=[];$('#inboxList').replaceChildren();syncBatchSelection();syncUrl();loadList();}
+$('#stageBar').addEventListener('click',e=>{const b=e.target.closest('[data-stage]');if(!b||b.dataset.stage===stage)return;stage=b.dataset.stage;changeListScope();});
 $('#inboxList').addEventListener('click',e=>{const b=e.target.closest('[data-report]');if(b)openReport(b.dataset.report);});
-$('#fStation').onchange=()=>{syncUrl();loadList();};$('#reload').onclick=loadList;
+$('#inboxList').addEventListener('change',e=>{
+ const input=e.target.closest('[data-batch-report]');if(!input)return;
+ if(input.checked)batchSelection.add(input.dataset.batchReport);else batchSelection.delete(input.dataset.batchReport);
+ syncBatchSelection();
+});
+$('#fStation').onchange=changeListScope;$('#reload').onclick=loadList;
 
 // ---- Detail: progress, what the reporter said next to the photos, the automatic sorting, proposals, then actions
 const photoSrc=(p,originals)=>originals&&p.src?p.src:p.preview;

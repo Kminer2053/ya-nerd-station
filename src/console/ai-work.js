@@ -38,7 +38,7 @@ export function bindDotsLink({api,toast,isCurrent},reportId){
   status.innerHTML=links.length?'<ul>'+links.map(l=>'<li>'+esc(l.label||'Codex 작업자')+' · '+esc(states[l.status]||'상태 확인 필요')+(l.account_ref?' · GPT 계정 구분값 '+esc(l.account_ref):'')+' · '+esc(expiry(l.expires_at))+' 만료'+(['connected','pending'].includes(l.status)?' <button type="button" data-disconnect="'+esc(l.id)+'">이 연결 해제</button>':'')+'</li>').join('')+'</ul>':'연결된 GPT 계정이 없습니다. 최초 연결 인증 후 이 화면에서 작업하세요.';
   const runner=await api('/api/console/agent-runners').catch(()=>null);if(!current())return;
   let output=panel.querySelector('#runnerStatus');if(!output){output=document.createElement('p');output.id='runnerStatus';output.className='fine';status.after(output);}
-  output.textContent=runner?(runner.runners.some(r=>r.online&&(!reportId||!r.report_id||r.report_id===reportId))?'자동 작업자 실행 중 · 채팅 지시를 자동으로 읽고 답변·수정안을 반환합니다.':'자동 작업자 대기 · 최초 인증 안내에서 개인 PC 작업자를 연결하세요.'):'';
+  output.textContent=runner?(runner.runners.some(r=>r.online&&(!reportId||!r.report_id||r.report_id===reportId))?'자동 작업자 온라인 · 지시의 접수와 실행은 채팅에서 확인하세요.':'자동 작업자 오프라인 · 최초 인증 안내에서 개인 PC 작업자를 연결하세요.'):'';
 
  }catch(e){if(current()){loaded=false;error.textContent=e.message;status.textContent='연결 상태를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.';}}
  finally{busy=false;if(current()){buttons();clearTimeout(pollTimer);pollTimer=setTimeout(load,8000);}}};

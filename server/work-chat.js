@@ -5,6 +5,7 @@ import {unzipSync} from 'fflate';
 import {removalCandidates} from './work-plan.js';
 import {metres} from '../src/reports.js';
 import {slotScope,rebaseSlots,publicSlot} from './facade-slots.js';
+import {onlineRunner,runnerCutoff,workExecution} from './work-execution.js';
 const parse=(s,f=null)=>{try{return s?JSON.parse(s):f;}catch{return f;}};
 const stamp=()=>new Date().toISOString();
 const isId=s=>typeof s==='string'&&/^[a-f0-9-]{36}$/.test(s);
@@ -28,14 +29,22 @@ export async function workPhotos(db,j){
 export async function chatDetail(env,report,actor){
  const db=env.DB,rows=(await db.prepare('SELECT rowid AS seq,* FROM work_messages WHERE report_id=? AND actor=? ORDER BY rowid DESC LIMIT 100').bind(report,actor).all()).results.reverse();
  const fs=(await db.prepare('SELECT * FROM work_files WHERE report_id=? AND actor=?').bind(report,actor).all()).results;
- const j=await currentJob(db,report,actor),link=await db.prepare('SELECT label,expires_at FROM agent_links WHERE actor=? AND principal_id IS NOT NULL AND revoked_at IS NULL AND expires_at>? ORDER BY redeemed_at DESC LIMIT 1').bind(actor,stamp()).first();
- const runner=await db.prepare("SELECT a.id,a.label,a.phase,a.error_code,a.last_seen_at FROM agent_runners a JOIN agent_links l ON l.id=a.link_id WHERE a.actor=? AND a.revoked_at IS NULL AND l.revoked_at IS NULL AND l.expires_at>? AND a.last_seen_at>? AND (a.report_id IS NULL OR a.report_id=?) ORDER BY a.last_seen_at DESC LIMIT 1").bind(actor,stamp(),new Date(Date.now()-45000).toISOString(),report).first();
- const lease=j?await db.prepare('SELECT l.runner_id,l.status,l.outcome,l.lease_until FROM agent_runner_leases l JOIN agent_runners a ON a.id=l.runner_id WHERE l.job_id=? AND a.actor=?').bind(j.id,actor).first():null;
- const retryable=Boolean(j?.status==='failed'||lease&&(lease.status==='active'&&lease.lease_until<=stamp()||['failed','interrupted'].includes(lease.outcome)));
+ const at=stamp(),j=await currentJob(db,report,actor);
+ const [link,runner,lease,proposal]=await Promise.all([
+  db.prepare('SELECT label,expires_at FROM agent_links WHERE actor=? AND principal_id IS NOT NULL AND revoked_at IS NULL AND expires_at>? ORDER BY redeemed_at DESC LIMIT 1').bind(actor,at).first(),
+  onlineRunner(db,actor,at,report),
+  j?db.prepare(`SELECT l.runner_id,l.status,l.outcome,l.error_code,l.lease_until,l.started_at,l.created_at,l.updated_at,r.last_seen_at,
+    (r.revoked_at IS NULL AND a.revoked_at IS NULL AND a.expires_at>? AND a.actor=r.actor AND a.principal_id=r.principal_id) AS authorized,
+    r.last_seen_at>? AS online
+    FROM agent_runner_leases l JOIN agent_runners r ON r.id=l.runner_id JOIN agent_links a ON a.id=r.link_id
+    WHERE l.job_id=? AND r.actor=?`).bind(at,runnerCutoff(at),j.id,actor).first():null,
+  j?.proposal_id?db.prepare('SELECT status FROM proposals WHERE id=? AND reviewer=?').bind(j.proposal_id,actor).first():null,
+ ]);
+ const execution=workExecution(j?{...j,proposal_status:proposal?.status}:null,lease,{at,available:runner});
  const messages=rows.map(m=>({id:m.id,role:m.role,text:m.text,job_id:m.job_id,created_at:m.created_at,attachments:parse(m.attachment_ids,[]).map(id=>fs.find(f=>f.id===id)).filter(Boolean).map(fileRow)}));
  // Legacy questions/plans are displayed once as system status, never impersonated as a new agent reply.
  if(j&&parse(j.questions,[]).length&&!rows.some(m=>m.job_id===j.id&&m.role==='agent'))messages.push({id:'status-'+j.id,role:'system',text:'이 작업에 남겨진 보완 질문\n'+parse(j.questions,[]).join('\n'),job_id:j.id,created_at:j.updated_at,attachments:[]});
- return {report_id:report,cursor:rows.at(-1)?.id||null,messages,job:jobRow(j),connection:{connected:Boolean(link),label:link?.label==='Dots 에비 · 초안 전용'?'Codex 작업자':link?.label||null,expires_at:link?.expires_at||null},dispatch:{automatic:Boolean(runner),runner:runner?{...runner,phase:runner.phase==='working'&&(lease?.runner_id!==runner.id||lease.status!=='active'||lease.lease_until<=stamp())?'busy':runner.phase}:null,retryable,note:runner?'연결된 작업자가 메시지·첨부를 자동으로 읽고 응답과 비공개 수정안을 반환합니다.':'요청을 저장했습니다. 개인 PC의 연결 작업자가 실행되면 자동으로 이어집니다.'}};
+ return {report_id:report,cursor:rows.at(-1)?.id||null,messages,job:j?{...jobRow(j),execution}:null,connection:{connected:Boolean(link),label:link?.label==='Dots 에비 · 초안 전용'?'Codex 작업자':link?.label||null,expires_at:link?.expires_at||null},dispatch:{automatic:Boolean(runner),runner:runner?{...runner,phase:runner.phase==='working'&&(lease?.runner_id!==runner.id||execution?.state!=='working')?'busy':runner.phase}:null,retryable:Boolean(execution?.retryable),note:runner?'연결된 작업자가 메시지·첨부를 자동으로 읽고 응답과 비공개 수정안을 반환합니다.':'요청을 저장했습니다. 개인 PC의 연결 작업자가 실행되면 자동으로 이어집니다.'}};
 }
 async function messagesContext(db,r,actor){
  const rows=(await db.prepare('SELECT role,text,attachment_ids FROM work_messages WHERE report_id=? AND actor=? ORDER BY rowid DESC LIMIT 30').bind(r,actor).all()).results.reverse();
@@ -49,7 +58,9 @@ async function revisionBaseline(db,r,actor,parent){
   if(!j?.proposal_id)return null;
   const p=await db.prepare('SELECT id,kind,target,meta FROM proposals WHERE id=? AND station_key=? AND report_ids=? AND reviewer=?').bind(j.proposal_id,r.station_key,JSON.stringify([r.id]),actor).first(),meta=parse(p?.meta,{}),target=parse(p?.target);
   if(!p||meta.ai_job!==j.id||!target||typeof target!=='object'||Array.isArray(target))return null;
-  return {job_id:j.id,proposal_id:p.id,kind:p.kind,name:target.name,structure:target.structure||null,facade_alias:p.kind==='facade'?target.alias:null,slot:target.slot?publicSlot(target.slot):null,hide_ids:(target.effects||[]).filter(e=>e.action==='hide').map(e=>e.id),structure_provenance:meta.structure_provenance||null};
+  return {job_id:j.id,proposal_id:p.id,kind:p.kind,name:target.name,structure:target.structure||null,facade_alias:p.kind==='facade'?target.alias:null,slot:target.slot?publicSlot(target.slot):null,
+   ...(target.facade_reframe?{facade_reframe:target.facade_reframe}:{}),
+   hide_ids:(target.effects||[]).filter(e=>e.action==='hide').map(e=>e.id),structure_provenance:meta.structure_provenance||null};
  };
  const latest=await snapshot(parent);if(latest)return latest;
  const inherited=parse(parent.input,{})?.revision_baseline;
@@ -64,7 +75,7 @@ async function resumeLatest(env,r,actor){
  const db=env.DB;
  for(let attempt=0;attempt<3;attempt++){
   const j=await currentJob(db,r.id,actor),anchor=await lastAdmin(db,r.id,actor);
-  if(!j||!anchor||j.report_version!==r.updated_at||!['awaiting_external','running','needs_info','draft'].includes(j.status)||parse(j.input,{}).chat_message_id===anchor.id)return;
+  if(!j||!anchor||j.report_version!==r.updated_at||!['awaiting_external','running','needs_info','draft','ready'].includes(j.status)||parse(j.input,{}).chat_message_id===anchor.id)return;
   const context=await messagesContext(db,r.id,actor),input={...parse(j.input,{}),...context,parent_job_id:j.id,chat_message_id:anchor.id,revision_baseline:await revisionBaseline(db,r,actor,j)},id=crypto.randomUUID(),at=new Date(Math.max(Date.now(),Date.parse(j.created_at)+1)).toISOString();
   const out=await db.batch([
    db.prepare("INSERT INTO report_jobs (id,report_id,station_key,kind,status,report_version,actor,input,questions,created_at,updated_at) SELECT ?,?,?,?,'awaiting_external',?,?,?,'[]',?,? WHERE EXISTS (SELECT 1 FROM report_jobs WHERE id=? AND status=?) AND EXISTS (SELECT 1 FROM reports WHERE id=? AND status='accepted' AND updated_at=?) AND (SELECT id FROM work_messages WHERE report_id=? AND actor=? AND role='admin' ORDER BY rowid DESC LIMIT 1)=?").bind(id,r.id,r.station_key,j.kind,r.updated_at,actor,JSON.stringify(input),at,at,j.id,j.status,r.id,r.updated_at,r.id,actor,anchor.id),
@@ -128,7 +139,7 @@ export async function chatConsoleApi(request,env,ctx,{json,bytes,body,me,audit,i
   const out=await db.batch(commands);if(!out[0].meta.changes)throw fail('다른 창에서 제보가 바뀌었거나 연결·작업 한도에 도달했습니다. 다시 확인하세요.',409);
   await audit(db,actor,'chat.start',r.id,{message:v.request_id,job:jid,scope:'conversation-draft'});return json(await chatDetail(env,r.id,actor),201);
  }
- const previous=await currentJob(db,r.id,actor),active=previous&&previous.report_version===r.updated_at&&r.status==='accepted'&&['awaiting_external','running','needs_info','draft'].includes(previous.status),at=new Date(Math.max(Date.now(),Date.parse(previous?.created_at||'')+1||0)).toISOString(),jid=active?crypto.randomUUID():null;
+ const previous=await currentJob(db,r.id,actor),active=previous&&previous.report_version===r.updated_at&&r.status==='accepted'&&['awaiting_external','running','needs_info','draft','ready'].includes(previous.status),at=new Date(Math.max(Date.now(),Date.parse(previous?.created_at||'')+1||0)).toISOString(),jid=active?crypto.randomUUID():null;
  // A child keeps exactly the previously approved kind, geometry and hide allowlist.
  // Text never changes those permissions. Concurrent requests use the old job status as a claim.
  const commands=[db.prepare('INSERT INTO work_messages (id,report_id,actor,role,job_id,text,attachment_ids,created_at) VALUES (?,?,?,\'admin\',?,?,?,?)').bind(v.request_id,r.id,actor,jid,text,JSON.stringify(ids),at)];

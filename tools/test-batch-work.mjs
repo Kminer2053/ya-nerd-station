@@ -4,6 +4,9 @@ import {readFileSync,readdirSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
 import {batchConsoleApi,runDueBatches} from '../server/batch-work.js';
 import {d1Adapter} from './sqlite-adapter.mjs';
+import server from '../server/index.js';
+import {runnerAgentTool} from '../server/agent-runner.js';
+import {chatDetail,chatConsoleApi} from '../server/work-chat.js';
 const RealDate=Date;let clock=Date.now();globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}};
 const migrations=readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort().map(f=>readFileSync('drizzle/'+f,'utf8'));
 function fixture(){
@@ -36,6 +39,24 @@ try{
  // Parent run plus children are one D1 transaction, including injected failure.
  const atomic=make(),atomicRequest=atomic.run([atomic.report()]);const originalBatch=atomic.env.DB.batch;atomic.env.DB={...atomic.db,batch:statements=>originalBatch([...statements,atomic.db.prepare('INSERT INTO nonexistent_batch_table VALUES (1)')])};await assert.rejects(atomic.api(atomicRequest));assert.equal(atomic.sqlite.prepare('SELECT count(*) AS n FROM batch_runs').get().n,0);assert.equal(atomic.sqlite.prepare('SELECT count(*) AS n FROM batch_items').get().n,0);atomic.env.DB=atomic.db;await atomic.api(atomicRequest);assert.equal(atomic.sqlite.prepare('SELECT count(*) AS n FROM batch_items').get().n,1);
 
+ const concurrent=make(),originalCandidate=concurrent.report();
+ const sameRequest=concurrent.run(undefined,{station_key:'S202103'});
+ let firstWrite,finishFirst,notifyFirst;
+ const firstAtWrite=new Promise(resolve=>{notifyFirst=resolve;});
+ concurrent.env.DB={...concurrent.db,async batch(statements){
+  if(!firstWrite){
+   firstWrite=statements;
+   return new Promise(resolve=>{finishFirst=resolve;notifyFirst();});
+  }
+  finishFirst(await concurrent.db.batch(firstWrite));
+  return concurrent.db.batch(statements);
+ }};
+ const firstRun=concurrent.api(sameRequest);
+ await firstAtWrite;
+ concurrent.report();
+ await Promise.all([firstRun,concurrent.api(sameRequest)]);
+ assert.deepEqual(concurrent.sqlite.prepare('SELECT report_id FROM batch_items').all().map(item=>item.report_id),[originalCandidate]);
+
  const schedule=make();for(let i=0;i<5;i++)schedule.report();const settings={action:'schedule',enabled:true,interval_minutes:15,station_key:'S202103',notes:'예약 사진 검토',confirm:true};await assert.rejects(schedule.api({...settings,interval_minutes:14}),/15분/);await assert.rejects(schedule.api({...settings,confirm:false}),/범위/);await schedule.api(settings);await schedule.drain();assert.equal(schedule.sqlite.prepare('SELECT count(*) AS n FROM batch_runs').get().n,0);clock+=15*60000;await Promise.all([schedule.drain(),schedule.drain()]);assert.equal(schedule.sqlite.prepare('SELECT count(*) AS n FROM batch_runs').get().n,1,'same due tick is materialized once');assert(schedule.sqlite.prepare('SELECT next_run_at FROM batch_schedules').get().next_run_at>new Date().toISOString());
  await schedule.api({...settings,enabled:false});assert.equal(schedule.sqlite.prepare("SELECT count(*) AS n FROM batch_items WHERE status='pending'").get().n,0);const runs=schedule.sqlite.prepare('SELECT count(*) AS n FROM batch_runs').get().n;clock+=15*60000;await schedule.drain();assert.equal(schedule.sqlite.prepare('SELECT count(*) AS n FROM batch_runs').get().n,runs);
 
@@ -49,5 +70,66 @@ try{
 
  // Crash after chat.start but before item ack recovers the saved message/job.
  const recovered=make(),recoverRequest=recovered.run([recovered.report()]);await recovered.api(recoverRequest);await recovered.drain();const saved=recovered.sqlite.prepare('SELECT id,job_id FROM batch_items').get();recovered.sqlite.prepare("UPDATE batch_items SET status='enqueuing',job_id=NULL,updated_at=? WHERE id=?").run(new Date(clock-120001).toISOString(),saved.id);await recovered.drain();assert.equal(recovered.sqlite.prepare('SELECT job_id FROM batch_items').get().job_id,saved.job_id);assert.equal(recovered.sqlite.prepare('SELECT count(*) AS n FROM report_jobs').get().n,1);
- console.log('PASS batch real chat + memory D1: manual/interval, atomic/idempotent scope, concurrent drains, actor isolation, stale/busy skips, 200+ pagination, cancellation, revoked auth, no approval');
+ // Exercise real MCP claims, starts, and question submissions for two reports.
+ const work=make(),station='S201801',reportIds=[work.report({station}),work.report({station})];
+ const queued=work.run(reportIds,{station_key:station});
+ const getRun=async()=> (await work.api()).data.runs.find(run=>run.id===queued.request_id);
+ const principal='synthetic-batch-a',link=work.sqlite.prepare("SELECT * FROM agent_links WHERE actor='batch-a'").get();
+ const invoke=async(name,args)=>{
+  const response=await server.fetch(new Request('https://synthetic.test/mcp',{
+   method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json','oai-authenticated-user-id':principal},
+   body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name,arguments:args}}),
+  }),work.env);
+  const data=await response.json();
+  assert.equal(response.status,200);
+  assert.equal(Boolean(data.error||data.result?.isError),false,JSON.stringify(data.result?.content));
+  return data.result.structuredContent;
+ };
+ const scoped=work.report({station,status:'accepted'}),scopedRunner=randomUUID(),generalRunner=randomUUID();
+ work.sqlite.prepare("INSERT INTO report_jobs (id,report_id,station_key,kind,status,report_version,actor,input,created_at,updated_at) VALUES (?, ?, ?, 'conversation', 'needs_info', ?, 'batch-a', ?, ?, ?)").run(randomUUID(),scoped,station,new Date().toISOString(),JSON.stringify({engine:'dots'}),new Date().toISOString(),new Date().toISOString());
+ await work.api(queued);
+ assert.equal((await work.api()).data.worker_status,'offline');
+ await invoke('toolkit_runner_register',{runner_id:scopedRunner,label:'한 제보 전용',report_id:scoped});
+ assert.equal((await work.api()).data.worker_status,'single-report');
+ let prepares=0;
+ await runnerAgentTool('toolkit_runner_claim',{runner_id:scopedRunner,request_id:randomUUID(),lease_token:'a'.repeat(64)},work.env,link,principal,{beforeClaim:async()=>{prepares++;await work.drain();}});
+ assert.equal(prepares,0,'one-report runner cannot drain other batch reports');
+ assert.equal((await getRun()).counts.pending,2);
+ await invoke('toolkit_runner_register',{runner_id:generalRunner,label:'여러 제보 작업자'});
+ assert.equal((await work.api()).data.worker_status,'online');
+ for(const digit of ['b','c']){
+  const token=digit.repeat(64);
+  const {job}=await invoke('toolkit_runner_claim',{runner_id:generalRunner,request_id:randomUUID(),lease_token:token});
+  assert(reportIds.includes(job.report_id));
+  const lease={runner_id:generalRunner,job_id:job.job_id,lease_token:token};
+  const execution=async()=> (await chatDetail(work.env,job.report_id,'batch-a')).job.execution;
+  assert.equal((await execution()).state,'received');
+  assert.equal((await getRun()).counts.received,1);
+  assert((await execution()).message_id,'state is anchored to the specific saved batch instruction');
+  assert.equal((await chatDetail(work.env,job.report_id,'batch-b')).job,null);
+  await invoke('toolkit_runner_begin',lease);
+  assert.equal((await execution()).state,'working');
+  assert.equal((await getRun()).counts.working,1);
+  await invoke('toolkit_runner_execute',{...lease,tool:'toolkit_request_info',arguments:{job_id:job.job_id,questions:['실제 치수 사진이 있을까요?']}});
+  await invoke('toolkit_runner_finish',{...lease,outcome:'needs_info'});
+  assert.equal((await execution()).state,'needs_info');
+ }
+ assert.equal((await getRun()).counts.needs_info,2);
+ assert.deepEqual(new Set((await getRun()).items.map(item=>item.report_id)),new Set(reportIds));
+ const first=reportIds[0],previous=(await chatDetail(work.env,first,'batch-a')).job.id;
+ const follow=await chatConsoleApi(new Request('https://synthetic.test/api/console/reports/'+first+'/chat',{method:'POST'}),work.env,null,{
+  json:(data,status)=>Response.json(data,{status}),me:{approver:'batch-a'},
+  body:async()=>({request_id:randomUUID(),text:'이 사진의 가로 폭은 2미터입니다.',attachment_ids:[]}),
+  audit:async()=>{},
+ });
+ const next=(await follow.json()).job;
+ assert.equal(next.execution.parent_job_id,previous);
+ assert.equal(next.execution.state,'waiting');
+ const result=(await getRun()).items.find(item=>item.report_id===first);
+ assert.equal(result.job_id,previous);
+ assert.equal(result.current_job_id,next.id);
+ assert.equal(result.state,'waiting','batch follows its report revision instead of displaying the old cancelled job');
+ assert.equal(work.sqlite.prepare('SELECT count(*) AS n FROM station_layers').get().n,0);
+ assert(!JSON.stringify(await getRun()).includes('token_hash'));
+ console.log('PASS batch real chat and MCP with memory D1: two sequential claims and tracked results, scoped workers, manual/interval, idempotency, cancellation, no approval');
 }finally{globalThis.Date=RealDate;for(const f of fixtures)f.sqlite.close();}

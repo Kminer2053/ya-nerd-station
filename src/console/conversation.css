@@ -8,7 +8,21 @@
 .ebi-connection{border-bottom:1px solid var(--line);padding-bottom:8px;font-size:13px}
 summary{cursor:pointer;font-weight:700;line-height:1.7}
 .ebi-connection .dots-link{margin-top:8px}.ebi-connection .dots-link p{font-size:12px}
-.ebi-chat .ebi-questions{display:none}.ebi-chat #ebiDispatch{font-size:12px;color:#99601f}
+.ebi-work-state{display:grid;gap:6px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
+.ebi-state-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;min-width:0}
+.ebi-work-state p{margin:0}
+.ebi-work-state .ebi-status{display:inline-flex;align-items:center;gap:7px;border-radius:999px;padding:4px 9px;background:#eef1ed;color:#355045}
+.ebi-work-state .ebi-status::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.ebi-work-state .ebi-status[data-state="working"],.ebi-work-state .ebi-status[data-state="received"]{background:#e4edf9;color:#264e7b}
+.ebi-work-state .ebi-status[data-state="needs_info"],.ebi-work-state .ebi-status[data-state="offline"]{background:#fbefda;color:#764819}
+.ebi-work-state .ebi-status[data-state="failed"],.ebi-work-state .ebi-status[data-state="interrupted"],.ebi-work-state .ebi-status[data-state="unavailable"]{background:#fbe8e5;color:#8a3830}
+.ebi-work-state .ebi-status[data-state="draft_submitted"],.ebi-work-state .ebi-status[data-state="applied"]{background:#e4f0df;color:#31532a}
+.ebi-work-state #ebiDispatch{font-size:12px;line-height:1.6;color:var(--ink)}
+.ebi-work-state .ebi-execution-meta{font-size:11px}
+.ebi-instruction-badge{font-size:10px;font-weight:700;border-radius:999px;padding:2px 6px;background:#e4edf9;color:#264e7b}
+.ebi-message[data-active-instruction="true"]{border-color:#8da9c5}
+.ebi-chat .ebi-questions{margin:0;padding:8px 12px 8px 28px;border:1px solid var(--line);border-radius:8px;font-size:12px;line-height:1.6}
+#ebiRetryWork{align-self:flex-start}
 #detailBody{display:grid;gap:12px;min-width:0}
 .d-head{font-size:12px}.progress-card{font-size:12px;padding:10px}
 .proposal-review{min-height:350px}

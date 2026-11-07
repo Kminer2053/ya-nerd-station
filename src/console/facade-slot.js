@@ -6,8 +6,8 @@ export function planeFromFields(floor,{name,longitude,latitude,bottom,height,wid
 }
 export function facadeSlotCard(detail){
  const r=detail.report;if(!detail.approver||r.type!=='facade'||!r.position||!r.floor||!['review','accepted','held'].includes(r.status))return '';
- const existing=detail.facade_slots||[];
- return '<section class="card facade-slot-card"><h3>사진을 입힐 면의 위치·규격</h3>'+(existing.length?existing.map(s=>'<p><b>'+esc(s.name)+'</b> · 비공개 면 후보 · '+esc(s.floor)+' · '+esc(s.surface.join(' × '))+'m · '+(s.dimension_basis==='measured'?'실측 / 도면 확인':'추정 · 현장 확인 필요')+'</p>').join(''):'<p>등록된 면이 없다면 승인자가 위치·방향과 실제 폭·높이를 확인해 주세요. 사진만으로 정확한 치수를 확정하지 않습니다.</p>')
+ const existing=detail.facade_slots||[],placementNote=r.station_key==='S202103'?'서울역 기준 파사드는 기존 위치와 크기에 사진을 교체할 수 있습니다.':'등록된 파사드가 있는 벽은 작업 채팅에서 이동·확장 범위를 요청할 수 있습니다. 초안에서 사진과 배치를 함께 검토하세요.';
+ return '<section class="card facade-slot-card"><h3>사진을 입힐 면의 위치·규격</h3><p>'+placementNote+'</p>'+(existing.length?existing.map(s=>'<p><b>'+esc(s.name)+'</b> · 비공개 면 후보 · '+esc(s.floor)+' · '+esc(s.surface.join(' × '))+'m · '+(s.dimension_basis==='measured'?'실측 / 도면 확인':'추정 · 현장 확인 필요')+'</p>').join(''):'<p>기준이 될 면이 없으면 아래에서 위치·방향과 폭·높이를 확인할 수 있습니다.</p>')
   +'<details><summary>'+(existing.length?'다른 규격으로 면 다시 확인':'새 파사드 면 확인·등록')+'</summary><form id="facadeSlotForm"><p class="fine">이 등록은 비공개 후보입니다. 연결 작업자에게 사진 보정을 맡긴 뒤 수정안의 최종 승인을 마쳐야 면과 이미지가 함께 공개됩니다. 다시 등록하면 이전 작업·수정안은 승인할 수 없습니다.</p><div class="structure-fields">'
   +'<label>시설·면 이름<input name="name" maxlength="100" required placeholder="예: 대합실 편의점 정면"></label><label>치수 확인 방법<select name="basis"><option value="estimated">추정 · 현장 확인 필요</option><option value="measured">실측 / 도면 확인</option></select></label>'
   +'<label>실제 폭(m)<input name="width" type="number" min="0.1" max="30" step="any" required></label><label>실제 높이(m)<input name="height" type="number" min="0.1" max="30" step="any" required></label><label>정면 방향(°)<input name="heading" type="number" min="0" max="359.999" step="any" required value="'+esc(Math.max(0,Math.min(359.999,Number(r.view?.heading)||0)))+'"></label>'
@@ -28,6 +28,8 @@ export function bindFacadeSlot(detail,{api,toast,onSaved}){
  });
 }
 export function facadeSlotReview(p){
- const s=p.target?.slot,proof=p.meta?.facade_provenance;if(!s)return '';
- return '<section class="estimate-note"><b>'+esc(s.name)+' · '+(s.dimension_basis==='measured'?'실측 / 도면 확인':s.dimension_basis==='estimated'?'추정 · 현장 확인 필요':'기존 승인 규격 · 치수 확인 방법 미기록')+(p.target.registration?' · 이미지와 함께 새 면 등록':'')+'</b><p>'+esc(s.floor)+' · 폭 '+s.surface[0]+'m × 높이 '+s.surface[1]+'m · 방향 '+s.heading+'°<br>면 중심고도 '+s.position[2]+'m · '+s.px.join(' × ')+'px</p>'+(proof?'<p>근거: '+esc(proof.evidence)+'</p><p>오차·한계: '+esc(proof.uncertainty)+'</p>':'')+'</section>';
+ const s=p.target?.slot,proof=p.meta?.facade_provenance,change=p.target?.facade_reframe;if(!s)return '';
+ const movement=change?[change.right_m?'정면에서 '+(change.right_m>0?'오른쪽 ':'왼쪽 ')+Math.abs(change.right_m)+'m':'',change.up_m?(change.up_m>0?'위로 ':'아래로 ')+Math.abs(change.up_m)+'m':''].filter(Boolean).join(' · '):'';
+ const comparison=change?'<p>기존 '+esc(change.anchor.surface.join(' × '))+'m → 변경 '+esc(s.surface.join(' × '))+'m · '+esc(movement||'중심 유지')+'<br>새 중심 '+esc(s.position.map(n=>n.toFixed(6)).join(', '))+' · 방향 유지</p><p>지도에서 이웃 면과 맞닿는 경계를 확인하세요. 새 사진 범위 밖에는 원래 3D 지도 표면이 보입니다.</p>':'';
+ return '<section class="estimate-note"><b>'+esc(s.name)+' · '+(s.dimension_basis==='measured'?'실측 / 도면 확인':s.dimension_basis==='estimated'?'추정 · 현장 확인 필요':'기존 승인 규격 · 치수 확인 방법 미기록')+(change?' · 같은 벽면 배치 변경':p.target.registration?' · 이미지와 함께 새 면 등록':'')+'</b><p>'+esc(s.floor)+' · 폭 '+s.surface[0]+'m × 높이 '+s.surface[1]+'m · 방향 '+s.heading+'°<br>면 중심고도 '+s.position[2]+'m · '+s.px.join(' × ')+'px</p>'+comparison+(proof?'<p>근거 · '+esc(proof.evidence)+'</p><p>오차·한계 · '+esc(proof.uncertainty)+'</p>':'')+'</section>';
 }

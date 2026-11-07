@@ -17,9 +17,40 @@ const MODULE_ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../
 const ALLOWED_TOOLS=new Set([...REQUIRED_TOOLS,...RUNNER_TOOLS,'toolkit_read_photo','toolkit_read_conversation']);
 const UUID=/^[a-f0-9-]{36}$/i,MAX_BYTES=4_800_000,MAX_PIXELS=4_194_304;
 const textItem=text=>({type:'inputText',text:typeof text==='string'?text:JSON.stringify(text)});
-export const safeError=e=>String(e?.message||e).replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g,'[image bytes]').replace(/Bearer\s+[^\s"']+/gi,'Bearer [redacted]').replace(/https?:\/\/[^\s<>"']+/g,value=>{try{const u=new URL(value);return u.origin+u.pathname+(u.search?'?[redacted]':'');}catch{return '[URL redacted]';}}).slice(0,1500);
+const GITHUB_CREDENTIAL=/\b(?:github_pat_[a-z0-9_]+|gh[pousr]_[a-z0-9]+)\b/gi;
+const isGitHubCredential=value=>typeof value==='string'&&/\b(?:github_pat_[a-z0-9_]{20,}|gh[pousr]_[a-z0-9]{20,})\b/i.test(value);
+const CREDENTIAL_FIELD=/(["']?\b[\w.-]*(?:token|password|secret|authorization|api[_-]?key|credential)[\w.-]*["']?\s*[:=]\s*)(?:\[redacted\]|"(?:\\.|[^"\\])*"|'[^']*'|[^\s,;\]}]+)/gi;
+export function safeError(error,values=[]){
+ let message=String(error?.message||error);
+ for(const value of values)if(typeof value==='string'&&value)message=message.replaceAll(value,'[redacted]');
+ return message.replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g,'[image bytes]')
+  .replace(GITHUB_CREDENTIAL,'[redacted]')
+  .replace(/\b(Bearer|Basic|token)\s+(?:\[redacted\]|[^\s"',;\]}]+)/gi,'$1 [redacted]')
+  .replace(CREDENTIAL_FIELD,'$1[redacted]')
+  .replace(/https?:\/\/[^\s<>"']+/g,value=>{try{return new URL(value).origin+'/[redacted]';}catch{return '[URL redacted]';}})
+  .slice(0,1500);
+}
 export function turnFailure(turn){const e=turn?.error||{},code=e.codexErrorInfo||e.code||null;return safeError('Codex 작업 실패 ('+(turn?.status||'unknown')+'): '+JSON.stringify({message:e.message||'상세 오류 없음',code,...(turn?.workerDiagnostics?.length?{notifications:turn.workerDiagnostics}:{})}));}
-export function startupDiagnostic(stderr,code,signal){const message=safeError(stderr||'추가 진단 없음'),category=/operation not permitted|permission denied|sandbox|read.only/i.test(message)?'sandbox':/config|toml|unknown field|invalid value/i.test(message)?'configuration':/auth|login|credential|401|403/i.test(message)?'authentication':/not found|enoent/i.test(message)?'executable':'startup';return 'Codex app-server 종료 ['+category+'] ('+(signal||code)+'): '+message;}
+function startupCategory(message){
+ if(/operation not permitted|permission denied|sandbox|read.only/i.test(message))return 'sandbox';
+ if(/config|toml|unknown field|invalid value/i.test(message))return 'configuration';
+ if(/auth|login|credential|401|403/i.test(message))return 'authentication';
+ if(/not found|enoent/i.test(message))return 'executable';
+ return 'startup';
+}
+export function startupDiagnostic(stderr,code,signal){
+ const status=/^SIG[A-Z0-9]+$/.test(signal||'')?signal:Number.isInteger(code)?code:'unknown';
+ return `Codex app-server 종료 [${startupCategory(stderr)}] (${status}). Codex CLI 설치·로그인·설정을 확인하세요.`;
+}
+const BOOTSTRAP_METHODS=new Set(['initialize','config/read','model/list','thread/start','permissionProfile/list','mcpServerStatus/list','app/installed']);
+const RUNTIME_ENV=new Set(['PATH','HOME','CODEX_HOME','USER','LOGNAME','LANG','TERM','TMPDIR','TMP','TEMP','XDG_CONFIG_HOME','XDG_CACHE_HOME','XDG_DATA_HOME','XDG_STATE_HOME','XDG_RUNTIME_DIR','USERPROFILE','APPDATA','LOCALAPPDATA','SYSTEMROOT','WINDIR','PATHEXT','SSL_CERT_FILE','SSL_CERT_DIR','NODE_EXTRA_CA_CERTS','HTTPS_PROXY','HTTP_PROXY','NO_PROXY','ALL_PROXY']);
+export function workerEnvironment(environment,tokenEnv){
+ const entries=Object.keys(environment).filter(key=>RUNTIME_ENV.has(key.toUpperCase())||/^LC_[A-Z_]+$/.test(key));
+ const result=Object.fromEntries(entries.map(key=>[key,environment[key]]));
+ if(tokenEnv&&Object.hasOwn(environment,tokenEnv))result[tokenEnv]=environment[tokenEnv];
+ return result;
+}
+const cliVersion=stdout=>String(stdout||'').split(/\r?\n/).find(line=>/^codex-cli \d+\.\d+\.\d+(?:[-+][a-z0-9.-]+)?$/i.test(line))||'unknown';
 const exactKeys=(value,keys)=>{if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!keys.includes(k)))throw Error('허용되지 않은 도구 입력입니다.');};
 export const jsonValue=result=>{if(result?.isError){const message=(result.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('\n');throw Error(safeError(message||'편집기 MCP가 요청을 거부했습니다. 작업·연결·최신 대화를 확인해 주세요.'));}if(result?.structuredContent!==undefined)return result.structuredContent;for(const c of result?.content||[])if(c.type==='text'){try{return JSON.parse(c.text);}catch{}}throw Error('편집기 MCP가 검증 가능한 JSON 응답을 반환하지 않았습니다.');};
 export function parseArgs(argv){
@@ -40,9 +71,9 @@ export function parseArgs(argv){
  if(o.reportId&&!UUID.test(o.reportId))throw Error('유효한 제보 UUID를 지정하세요.');
  if((o.reportId||o.label)&&!o.companion||o.companion&&o.job)throw Error('companion은 --report로 범위를 지정하며 --job과 함께 사용할 수 없습니다.');
  if(o.label&&o.label.length>80)throw Error('작업자 이름은 80자 이하로 입력하세요.');
- if(o.tokenEnv&&!/^[A-Za-z_][A-Za-z0-9_]*$/.test(o.tokenEnv))throw Error('token-env에는 토큰 값이 아닌 환경변수 이름을 지정하세요.');
+ if(o.tokenEnv&&(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(o.tokenEnv)||isGitHubCredential(o.tokenEnv)))throw Error('token-env에는 토큰 값이 아닌 환경변수 이름을 지정하세요.');
  if(o.tokenEnv&&!o.mcpUrl)throw Error('--token-env는 --mcp-url과 함께 사용하세요.');
- if(o.mcpUrl){const u=new URL(o.mcpUrl);if(u.username||u.password||u.search||u.hash||!((u.protocol==='https:')||(u.protocol==='http:'&&u.hostname==='127.0.0.1')))throw Error('MCP 주소는 비밀값 없는 HTTPS 또는 http://127.0.0.1 주소만 허용합니다.');}
+ if(o.mcpUrl){const u=new URL(o.mcpUrl);if(u.username||u.password||u.search||u.hash||isGitHubCredential(o.mcpUrl)||!((u.protocol==='https:')||(u.protocol==='http:'&&u.hostname==='127.0.0.1')))throw Error('MCP 주소는 비밀값 없는 HTTPS 또는 http://127.0.0.1 주소만 허용합니다.');}
  return o;
 }
 export function appServerArgs(options){
@@ -57,7 +88,7 @@ export async function discoverRuntimeReadRoots(){
  try{roots.add(await realpath(MODULE_ROOT));roots.add(MODULE_ROOT);}catch(e){if(e.code!=='ENOENT')throw e;}
  if(process.platform==='darwin'){
   try{for(const f of await readdir(path.join(prefix,'lib')))if(f.endsWith('.dylib'))queue.push(path.join(prefix,'lib',f));}catch(e){if(e.code!=='ENOENT')throw e;}
-  while(queue.length){const binary=await realpath(queue.pop()).catch(()=>null);if(!binary||seen.has(binary))continue;seen.add(binary);if(seen.size>256)throw Error('도구 런타임 의존성 범위를 확인하지 못했습니다.');const deps=spawnSync('/usr/bin/otool',['-L',binary],{encoding:'utf8',timeout:5000});if(deps.status!==0)throw Error('Node 런타임 라이브러리 범위를 확인하지 못했습니다.');
+  while(queue.length){const binary=await realpath(queue.pop()).catch(()=>null);if(!binary||seen.has(binary))continue;seen.add(binary);if(seen.size>256)throw Error('도구 런타임 의존성 범위를 확인하지 못했습니다.');const deps=spawnSync('/usr/bin/otool',['-L',binary],{encoding:'utf8',timeout:5000,env:workerEnvironment(process.env)});if(deps.status!==0)throw Error('Node 런타임 라이브러리 범위를 확인하지 못했습니다.');
    for(const line of deps.stdout.split('\n').slice(1)){const dep=line.trim().split(' (')[0];if(dep.startsWith('/opt/homebrew/opt/')||dep.startsWith('/usr/local/opt/')){const marker=dep.lastIndexOf('/opt/'),aliases=dep.slice(0,marker+4),packagePath=dep.slice(0,dep.indexOf('/',marker+5));roots.add(aliases);roots.add(await realpath(packagePath));queue.push(dep);}}
   }
  }
@@ -69,34 +100,43 @@ export async function probeFilesystem(client){
  try{await mkdir(job,{mode:0o700});await writeFile(path.join(job,'allowed.txt'),'synthetic allowed',{mode:0o600});await writeFile(outside,'synthetic denied canary',{mode:0o600});await symlink(outside,path.join(job,'escape.txt'));
   const script="const fs=require('node:fs');const blocked=p=>{try{fs.readFileSync(p);return false;}catch(e){return ['EPERM','EACCES'].includes(e.code);}};const allowed=fs.readFileSync('allowed.txt','utf8')==='synthetic allowed';fs.writeFileSync('written.txt','ok');const r={allowed_read:allowed,allowed_write:fs.existsSync('written.txt'),outside_read_blocked:blocked(process.argv[1]),symlink_escape_blocked:blocked('escape.txt'),tool_runtime_read:fs.readFileSync(process.argv[2]).length>0};console.log(JSON.stringify(r));process.exit(Object.values(r).every(Boolean)?0:9)";
   const result=await client.request('command/exec',{cwd:job,permissionProfile:WORKER_PERMISSION_PROFILE,command:[process.execPath,'--openssl-config=/dev/null','-e',script,outside,path.join(MODULE_ROOT,'fast-png','package.json')],timeoutMs:10000,outputBytesCap:1000});let proof;try{proof=JSON.parse(result.stdout);}catch{}
-  if(result.exitCode!==0||!proof||!['allowed_read','allowed_write','outside_read_blocked','symlink_escape_blocked','tool_runtime_read'].every(k=>proof[k]===true))throw Error('OS 읽기 격리 합성 검증에 실패했습니다. 제한을 해제하지 않고 중단합니다. '+safeError(result.stderr||'canary denied boundary not enforced'));
+ if(result.exitCode!==0||!proof||!['allowed_read','allowed_write','outside_read_blocked','symlink_escape_blocked','tool_runtime_read'].every(k=>proof[k]===true))throw Error('OS 읽기 격리 합성 검증에 실패했습니다. 제한을 해제하지 않고 중단합니다.');
   return proof;
  }finally{await rm(root,{recursive:true,force:true});}
 }
 export class AppServerClient{
+ #stderrTail='';
+ #redactValues;
  constructor(child,{timeoutMs=60_000,redactValues=[],onRequest=async()=>{throw Error('지원하지 않는 서버 요청입니다.');}}={}){
-  this.child=child;this.timeoutMs=timeoutMs;this.onRequest=onRequest;this.redactValues=redactValues;this.pending=new Map();this.listeners=new Set();this.next=1;this.buffer='';this.closed=false;this.exited=false;this.closing=null;this.stderr='';
+  this.child=child;this.timeoutMs=timeoutMs;this.onRequest=onRequest;this.#redactValues=redactValues;this.pending=new Map();this.listeners=new Set();this.next=1;this.buffer='';this.closed=false;this.exited=false;this.closing=null;
   child.stdout.setEncoding('utf8');child.stderr.setEncoding('utf8');
-  child.stderr.on('data',s=>{for(const secret of redactValues)if(secret)s=s.split(secret).join('[redacted]');this.stderr=(this.stderr+safeError(s)).slice(-2000);});
+  child.stderr.on('data',chunk=>{this.#stderrTail=(this.#stderrTail+chunk).slice(-12_000);});
   child.stdout.on('data',chunk=>{this.buffer+=chunk;if(this.buffer.length>16_000_000){this.fail(Error('app-server 응답 크기 한도를 넘었습니다.'));return;}let i;while((i=this.buffer.indexOf('\n'))>=0){const line=this.buffer.slice(0,i);this.buffer=this.buffer.slice(i+1);if(!line.trim())continue;try{this.receive(JSON.parse(line));}catch{this.fail(Error('app-server JSON 응답이 손상되었습니다.'));}}});
-  child.stdin.on('error',e=>this.fail(Error('Codex app-server 입력 연결 실패: '+safeError(e))));
-  child.on('error',e=>this.fail(Error('Codex app-server 실행 실패: '+safeError(e))));child.on('exit',(code,signal)=>{this.exited=true;this.fail(Error(startupDiagnostic(this.stderr,code,signal)));});
+  child.stdin.on('error',e=>this.fail(Error('Codex app-server 입력 연결 실패 ['+startupCategory(e.message)+']')));
+  child.on('error',e=>this.fail(Error('Codex app-server 실행 실패 ['+startupCategory(e.message)+']')));
+  child.on('exit',(code,signal)=>{this.exited=true;const error=Error(startupDiagnostic(this.#stderrTail,code,signal));this.#stderrTail='';this.fail(error);});
  }
  send(value){if(this.closed)throw Error('app-server 연결이 종료됐습니다.');this.child.stdin.write(JSON.stringify(value)+'\n');}
- request(method,params={},timeoutMs=this.timeoutMs){const id=this.next++;return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{this.pending.delete(id);reject(Error(method+' 응답 시간 초과'));},timeoutMs);this.pending.set(id,{resolve,reject,timer});try{this.send({id,method,params});}catch(e){clearTimeout(timer);this.pending.delete(id);reject(e);}});}
+ request(method,params={},timeoutMs=this.timeoutMs){const id=this.next++;return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{this.pending.delete(id);reject(Error(method+' 응답 시간 초과'));},timeoutMs);this.pending.set(id,{resolve,reject,timer,method});try{this.send({id,method,params});}catch(e){clearTimeout(timer);this.pending.delete(id);reject(e);}});}
  notify(method,params={}){this.send({method,params});}
  receive(message){
-  if(message.method&&message.id!==undefined){Promise.resolve().then(()=>this.onRequest(message.method,message.params)).then(result=>this.send({id:message.id,result}),error=>this.send({id:message.id,error:{code:-32603,message:safeError(error)}})).catch(()=>{});return;}
-  if(message.id!==undefined){const p=this.pending.get(message.id);if(!p)return;clearTimeout(p.timer);this.pending.delete(message.id);message.error?p.reject(Error(safeError(message.error.message||'app-server 요청 실패'))):p.resolve(message.result);return;}
+  if(message.method&&message.id!==undefined){Promise.resolve().then(()=>this.onRequest(message.method,message.params)).then(result=>this.send({id:message.id,result}),error=>this.send({id:message.id,error:{code:-32603,message:safeError(error,this.#redactValues)}})).catch(()=>{});return;}
+  if(message.id!==undefined){
+   const p=this.pending.get(message.id);if(!p)return;clearTimeout(p.timer);this.pending.delete(message.id);
+   if(!message.error){p.resolve(message.result);return;}
+   const reason=message.error.message||'app-server 요청 실패';
+   const detail=BOOTSTRAP_METHODS.has(p.method)?`Codex ${p.method} 실패 [${startupCategory(reason)}]. 설치·로그인·설정을 확인하세요.`:safeError(reason,this.#redactValues);
+   p.reject(Error(detail));return;
+  }
   for(const listener of this.listeners)listener(message);
  }
  fail(error){if(this.closed)return;this.closed=true;for(const p of this.pending.values()){clearTimeout(p.timer);p.reject(error);}this.pending.clear();for(const listener of this.listeners)listener({method:'worker/closed',params:{error}});}
  waitForTurn(threadId,{timeoutMs=15*60_000,signal}={}){
-  let cancel;const promise=new Promise((resolve,reject)=>{let timer;const diagnostics=[];const sanitize=value=>{let s=typeof value==='string'?value:JSON.stringify(value);for(const secret of this.redactValues)if(secret)s=s.split(secret).join('[redacted]');return safeError(s).slice(0,600);};
+  let cancel;const promise=new Promise((resolve,reject)=>{let timer;const diagnostics=[];const sanitize=value=>safeError(typeof value==='string'?value:JSON.stringify(value),this.#redactValues).slice(0,600);
    const done=(err,value)=>{clearTimeout(timer);this.listeners.delete(listener);signal?.removeEventListener('abort',aborted);err?reject(err):resolve(value);};
    const listener=m=>{
-    if(m.method==='error'&&(!m.params?.threadId||m.params.threadId===threadId)){const e=m.params?.error||m.params||{};diagnostics.push(sanitize({message:e.message||'Codex error notification',code:e.codexErrorInfo||e.code||null}));if(diagnostics.length>4)diagnostics.shift();}
-    if(m.method==='turn/completed'&&m.params?.threadId===threadId){const turn=m.params.turn,error=turn?.error?{message:sanitize(turn.error.message||''),codexErrorInfo:turn.error.codexErrorInfo||turn.error.code||null}:null;done(null,{...turn,error,workerDiagnostics:diagnostics});}
+    if(m.method==='error'&&m.params?.threadId===threadId){const e=m.params?.error||m.params||{};diagnostics.push(sanitize({message:e.message||'Codex error notification',code:e.codexErrorInfo||e.code||null}));if(diagnostics.length>4)diagnostics.shift();}
+    if(m.method==='turn/completed'&&m.params?.threadId===threadId){const turn=m.params.turn,error=turn?.error?{message:sanitize(turn.error.message||''),codexErrorInfo:sanitize(turn.error.codexErrorInfo||turn.error.code||null)}:null;done(null,{...turn,error,workerDiagnostics:diagnostics});}
     if(m.method==='worker/closed')done(m.params.error);
    };const aborted=()=>done(Error('작업이 중단됐습니다.'));cancel=aborted;this.listeners.add(listener);timer=setTimeout(()=>done(Error('Codex 작업 제한 시간을 넘었습니다.')),timeoutMs);if(signal?.aborted)aborted();else signal?.addEventListener('abort',aborted,{once:true});});
   promise.catch(()=>{});return {promise,cancel:()=>cancel?.()};
@@ -240,25 +280,29 @@ export function taskConfig(effective={}){
  // Status inventories also contain virtual/native servers. Creating a config
  // entry for those would invent a transport-less server and break startup.
  // Effective config serialization is not a lossless TOML roundtrip (optional
- // numeric values can be empty strings). Disabled servers need only their
- // transport discriminant; headers, env and secrets are intentionally omitted.
+ // numeric values can be empty strings). Preserve the transport kind with
+ // inert placeholders so an endpoint or command argument cannot copy a secret.
  const configured={};for(const [name,value]of Object.entries(effective.mcp_servers||{}))if(value&&typeof value==='object'){
-  if(typeof value.url==='string'&&value.url.trim())configured[name]={url:value.url,enabled:false};
-  else if(typeof value.command==='string'&&value.command.trim())configured[name]={command:value.command,...(Array.isArray(value.args)&&value.args.every(a=>typeof a==='string')?{args:value.args}:{}),enabled:false};
+  if(typeof value.url==='string'&&value.url.trim())configured[name]={url:'https://disabled.invalid/',enabled:false};
+  else if(typeof value.command==='string'&&value.command.trim())configured[name]={command:'false',enabled:false};
  }
  const apps={_default:{enabled:false}};for(const [name,value]of Object.entries(effective.apps||{}))if(value&&typeof value==='object')apps[name]={enabled:false};
  return {mcp_servers:configured,apps,shell_environment_policy:{inherit:'none',set:{PATH:path.dirname(process.execPath)+':/usr/bin:/bin',LANG:'ko_KR.UTF-8',OPENSSL_CONF:'/dev/null'}}};
 }
 
-export async function run(options,{log=value=>process.stdout.write(JSON.stringify(value)+'\n'),signal,spawnImpl=spawn,spawnSyncImpl=spawnSync,runtimeReadRootsImpl=discoverRuntimeReadRoots,probeFilesystemImpl=probeFilesystem}={}){
- const version=spawnSyncImpl(options.codex,['--version'],{encoding:'utf8',timeout:10_000});if(version.error||version.status!==0)throw Error('Codex CLI를 실행할 수 없습니다. 설치 경로를 --codex로 지정하세요.');
- const auth=spawnSyncImpl(options.codex,['login','status'],{encoding:'utf8',timeout:10_000});if(auth.error||auth.status!==0)throw Error('Codex CLI 로그인이 필요합니다. codex login을 먼저 실행하세요.');
- const runtimeReadRoots=await runtimeReadRootsImpl();let activeBridge=null,activeThread=null;const child=spawnImpl(options.codex,appServerArgs({...options,runtimeReadRoots}),{stdio:['pipe','pipe','pipe'],env:process.env});
- const client=new AppServerClient(child,{timeoutMs:options.rpcTimeoutMs,redactValues:options.tokenEnv?[process.env[options.tokenEnv]]:[],onRequest:async(method,params)=>{
+export async function run(options,{log:writeLog=value=>process.stdout.write(JSON.stringify(value)+'\n'),signal,spawnImpl=spawn,spawnSyncImpl=spawnSync,runtimeReadRootsImpl=discoverRuntimeReadRoots,probeFilesystemImpl=probeFilesystem,environment=process.env}={}){
+ const env=workerEnvironment(environment),appEnv=workerEnvironment(environment,options.tokenEnv);
+ if(options.tokenEnv&&isGitHubCredential(appEnv[options.tokenEnv]))throw Error('GitHub 자격증명을 Toolkit 연결에 사용할 수 없습니다. Toolkit 전용 인증을 확인하세요.');
+ const redactValues=options.tokenEnv?[appEnv[options.tokenEnv]]:[];
+ const log=value=>writeLog(JSON.parse(JSON.stringify(value,(_key,field)=>typeof field==='string'?safeError(field,redactValues):field)));
+ const version=spawnSyncImpl(options.codex,['--version'],{encoding:'utf8',timeout:10_000,env});if(version.error||version.status!==0)throw Error('Codex CLI를 실행할 수 없습니다. 설치 경로를 --codex로 지정하세요.');
+ const auth=spawnSyncImpl(options.codex,['login','status'],{encoding:'utf8',timeout:10_000,env});if(auth.error||auth.status!==0)throw Error('Codex CLI 로그인이 필요합니다. codex login을 먼저 실행하세요.');
+ const runtimeReadRoots=await runtimeReadRootsImpl();let activeBridge=null,activeThread=null;const child=spawnImpl(options.codex,appServerArgs({...options,runtimeReadRoots}),{stdio:['pipe','pipe','pipe'],env:appEnv});
+ const client=new AppServerClient(child,{timeoutMs:options.rpcTimeoutMs,redactValues,onRequest:async(method,params)=>{
   if(method==='currentTime/read')return {current_time:new Date().toISOString()};
   if(method==='item/tool/call'){
    if(!activeBridge||params.threadId!==activeThread)return {success:false,contentItems:[textItem('이 작업의 동적 도구가 아닙니다.')]};
-   try{return await activeBridge.dynamic(params.tool,params.arguments);}catch(e){return {success:false,contentItems:[textItem(safeError(e))]};}
+   try{return await activeBridge.dynamic(params.tool,params.arguments);}catch(e){return {success:false,contentItems:[textItem(safeError(e,redactValues))]};}
   }
   // The unattended worker never grants additional command, filesystem, network,
   // account or approval privileges. A blocked run is handed back to the app.
@@ -295,7 +339,7 @@ export async function run(options,{log=value=>process.stdout.write(JSON.stringif
   const profiles=await client.request('permissionProfile/list',{cwd:options.workspace});if(!profiles.data?.some(p=>p.id===WORKER_PERMISSION_PROFILE&&p.allowed))throw Error('현재 관리 정책에서 사진 작업 전용 권한 프로필을 사용할 수 없습니다.');
   const probe=await client.request('thread/start',{model:model.model,cwd:options.workspace,ephemeral:true,permissions:WORKER_PERMISSION_PROFILE,runtimeWorkspaceRoots:[options.workspace],approvalPolicy:'on-request'});verifyPermissionSelection(probe,options.workspace);
   await probeFilesystemImpl(client);
-  log({event:'checked',cli:version.stdout.trim(),transport:'stdio',server:toolkit.server,connected:true,draft_only:true,companion_capabilities:options.companion?'available':'not_requested',model:model.model,model_catalog_available:true,filesystem_read_scope:'job-and-tool-runtime',permission_profile:WORKER_PERMISSION_PROFILE,filesystem_canary:'passed',image_generation:'not_verified',note:'모델은 현재 계정 카탈로그에서 선택했습니다. 실제 실행과 이미지 편집 가능성은 작업 실행에서 확인합니다.'});
+  log({event:'checked',cli:cliVersion(version.stdout),transport:'stdio',server:toolkit.server,connected:true,draft_only:true,companion_capabilities:options.companion?'available':'not_requested',model:model.model,model_catalog_available:true,filesystem_read_scope:'job-and-tool-runtime',permission_profile:WORKER_PERMISSION_PROFILE,filesystem_canary:'passed',image_generation:'not_verified',note:'모델은 현재 계정 카탈로그에서 선택했습니다. 실제 실행과 이미지 편집 가능성은 작업 실행에서 확인합니다.'});
   if(options.mode==='check')return {status:'checked'};
   unlock=await acquireLock(options.workspace);const stateFile=path.join(options.workspace,'state.json'),state=await readJson(stateFile,{processed:{},artifacts:{}});state.processed||={};state.artifacts||={};
   if(options.companion){companion=new CompanionSession({call:(name,args)=>controlBridge.call(name,args),jsonValue,workspace:options.workspace,reportId:options.reportId,label:options.label,log,onLost:error=>{log({event:'companion_attention',error_code:diagnosticCode(error)});if(activeThread)client.request('turn/interrupt',{threadId:activeThread},3000).catch(()=>{});}});await companion.start();}

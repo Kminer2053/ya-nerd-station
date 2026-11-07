@@ -9,10 +9,17 @@ class Element{
  set innerHTML(value){this._html=value;for(const [,id]of value.matchAll(/\bid="([^"]+)"/g)){const node=new Element();node.id=id;nodes.set(id,node);}}
  get innerHTML(){return this._html||'';}
  querySelector(selector){if(selector.startsWith('#'))return nodes.get(selector.slice(1))||null;return new Element();}
- append(...children){this.children.push(...children);}
- prepend(...children){this.children.unshift(...children);}
- replaceChildren(...children){this.children=[...children];}
- before(){} after(){} remove(){this.isConnected=false;}
+ append(...children){for(const child of children)child.parent=this;this.children.push(...children);}
+ prepend(...children){for(const child of children)child.parent=this;this.children.unshift(...children);}
+ replaceChildren(...children){for(const child of this.children)child.parent=null;this.children=[];this.append(...children);}
+ insertBefore(node,reference){
+  if(node.parent)node.parent.children=node.parent.children.filter(child=>child!==node);
+  const index=reference?this.children.indexOf(reference):this.children.length;
+  this.children.splice(index,0,node);
+  node.parent=this;
+ }
+ replaceWith(node){this.parent.insertBefore(node,this);this.remove();}
+ before(){} after(){} remove(){if(this.parent)this.parent.children=this.parent.children.filter(child=>child!==this);this.parent=null;this.isConnected=false;}
  setAttribute(name,value){this.attributes[name]=value;}
  getContext(){return {drawImage(){}};}
  toBlob(resolve,type){resolve(new Blob(['fixture'],{type}));}
@@ -42,5 +49,77 @@ try{
  assert.equal(nodes.get('ebiFilesList').children[0].children[1].children[0].textContent,'지도 배치.png','Normalized image MIME and filename extension agree');assert.match(nodes.get('ebiCount').textContent,/첨부 1\/8/);
 
  chat.clear();assert.equal(panel.hidden,true);
- console.log('PASS: actual chat mount/report/renderStatus; stale draft cannot override applied/queued/rejected report; read-only result actions and reopened conversation');
+
+ const settle=()=>new Promise(resolve=>setImmediate(resolve));
+ const instructions=[{id:'instruction-a',role:'admin',job_id:'job-a',text:'첫 지시',created_at:'2026-11-07T04:00:00Z'}];
+ const snapshot=(state,{id='job-a',messageId='instruction-a',parentJobId=null,messages=instructions,questions=[]}={})=>({
+  messages,connection:{connected:true,label:'시험 Codex'},
+  job:{id,kind:'conversation',status:state==='draft_submitted'?'draft':state==='needs_info'?'needs_info':'awaiting_external',report_version:'v1',proposal_id:state==='draft_submitted'?'proposal':null,questions,
+   execution:{state,job_id:id,message_id:messageId,parent_job_id:parentJobId,updated_at:'2026-11-07T04:03:00Z',retryable:['failed','interrupted'].includes(state),runner_online:state!=='offline'}},
+  dispatch:{automatic:true,runner:{phase:'working'},retryable:true},
+ });
+ let data=snapshot('waiting'),read=async()=>data,write,postCount=0,refreshCount=0;
+ const api=(path,options)=>{
+  if(!path.endsWith('/chat'))return Promise.resolve({});
+  if(options?.method==='POST'){postCount++;return write(JSON.parse(options.body));}
+  return read(path,options);
+ };
+ const mount=()=>{chat=createEbiChat({api,toast:()=>{},onWorkChange:()=>{refreshCount++;}});chat.mount(new Element());chat.report(report('accepted'),'시험 승인자');};
+ const node=id=>nodes.get(id),status=()=>node('ebiStatus').textContent;
+ const reload=async()=>{node('ebiRetry').onclick();await settle();};
+ const active=()=>node('ebiLog').children.filter(child=>child.dataset.activeInstruction);
+ const ids=()=>node('ebiLog').children.map(child=>child.dataset.messageId);
+ mount();await settle();
+ assert.equal(status(),'작업 대기','an online worker working on another job cannot start this instruction');
+ const originalInstruction=active()[0];
+ data=snapshot('received');await reload();assert.equal(status(),'작업 접수');
+ data=snapshot('working');await reload();assert.equal(status(),'Codex 작업 중');
+ assert.equal(active()[0],originalInstruction,'lifecycle polls preserve the same message bubble');
+ assert.equal(refreshCount,0,'lease-only transitions update chat without refreshing the map');
+ for(const [state,label] of [['needs_info','보완 필요'],['draft_submitted','초안 제출'],['failed','작업 실패'],['interrupted','작업 중단'],['offline','작업자 오프라인'],['cancelled','작업 취소'],['applied','지도 반영 완료']]){
+  data=snapshot(state,{questions:state==='needs_info'?['좌측 끝을 확인해 주세요.']:[]});await reload();assert.equal(status(),label);
+  assert.equal(node('ebiRetryWork').hidden,!['failed','interrupted'].includes(state));
+  if(state==='needs_info')assert.equal(node('ebiQuestions').children[0].textContent,'좌측 끝을 확인해 주세요.');
+  if(state==='applied')assert.equal(node('ebiText').disabled,true);
+ }
+ const reply={id:'answer-a',role:'agent',job_id:'job-a',text:'좌측 끝을 확인해 주세요.',created_at:'2026-11-07T04:04:00Z'};
+ data=snapshot('needs_info',{messages:[...instructions,reply,reply],questions:[reply.text]});await reload();
+ assert.deepEqual(ids(),['instruction-a','answer-a']);
+ assert.equal(node('ebiQuestions').hidden,true,'a saved reply is not duplicated as a status question');
+
+ data=snapshot('waiting');data.job.execution.job_id='other-job';await reload();
+ assert.equal(status(),'작업 대기');assert(!node('ebiDispatch').textContent.includes('Codex 작업 중'));
+ read=async()=>{throw Error('연결 시험');};await reload();
+ assert.equal(status(),'작업 상태 확인 지연');assert.match(node('ebiSyncError').textContent,/연결 시험/);
+
+ const pending=[];
+ read=(path,{signal})=>new Promise(resolve=>pending.push({path,signal,resolve}));
+ node('ebiRetry').onclick();
+ chat.report({report:{...report('accepted').report,id:'other-report'}},'시험 승인자');
+ chat.report(report('accepted'),'시험 승인자');
+ assert.equal(pending.length,3);assert(pending[0].signal.aborted&&pending[1].signal.aborted);
+ pending[2].resolve(snapshot('working'));await settle();
+ pending[0].resolve(snapshot('draft_submitted'));pending[1].resolve(snapshot('offline'));await settle();
+ assert.equal(status(),'Codex 작업 중','an aborted response cannot overwrite a reselected report');
+
+ let sentId;
+ write=async body=>{
+  sentId=body.request_id;
+  const followup={id:sentId,role:'admin',job_id:'job-b',text:body.text,created_at:'2026-11-07T04:05:00Z'};
+  data=snapshot('waiting',{id:'job-b',messageId:sentId,parentJobId:'job-a',messages:[...instructions,reply,followup]});
+  throw Error('저장 응답 유실');
+ };
+ read=async()=>data;
+ node('ebiText').value='우측을 한 칸 더 넓혀 주세요.';node('ebiText').oninput();
+ node('ebiForm').onsubmit({preventDefault(){}});await settle();
+ assert.equal(postCount,1);assert.equal(node('ebiText').value,'우측을 한 칸 더 넓혀 주세요.');
+ await reload();
+ assert.equal(postCount,1,'finding the saved request does not send it again');
+ assert.equal(node('ebiText').value,'');assert.match(node('ebiPhase').textContent,/저장된 지시/);
+ assert.deepEqual(ids(),['instruction-a','answer-a',sentId]);
+ assert.equal(active()[0].dataset.messageId,sentId);
+ assert.equal(active()[0].children[0].children.at(-1).textContent,'현재 보완 지시');
+ chat.clear();mount();await settle();
+ assert.equal(status(),'작업 대기');assert.equal(active()[0].dataset.messageId,sentId);assert.equal(postCount,1);
+ console.log('PASS: authoritative lifecycle states, stale polls, instruction linkage, saved-request recovery, message deduplication and reload');
 }finally{chat?.stop();globalThis.document=nativeDocument;globalThis.createImageBitmap=nativeBitmap;}

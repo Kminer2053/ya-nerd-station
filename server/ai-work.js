@@ -5,7 +5,7 @@ import {decodePhoto,aiThumbnail,rectifyFace} from './work-images.js';
 import {requestVision} from './ai.js';
 import {workPhotos} from './work-chat.js';
 import {readDraftArtifact,artifactUsage} from './work-artifacts.js';
-import {slotScope,registrationTarget,registrationGuard,activateSlot,rebaseSlots} from './facade-slots.js';
+import {slotScope,registrationTarget,registrationGuard,activateSlot,rebaseSlots,publicSlot,validateFacadeReframe,privateFacadeTarget} from './facade-slots.js';
 const parse=(s,f=null)=>{try{return s?JSON.parse(s):f;}catch{return f;}};
 const now=()=>new Date().toISOString();
 const storageLimit=env=>Math.max(10,Math.min(2000,Number(env.REPORT_STORAGE_MB)||500))*1_000_000;
@@ -56,7 +56,7 @@ export async function runWork(env,id,helpers,external=null){
   if(!photos.length)questions.push('현장 사진을 추가해 주세요.');
   if(input.kind==='structure'&&!input.structure&&input.allow_estimate!==true)questions.push('구조물의 이름, 폭·깊이·높이(m), 정면 방향과 실측/추정 여부를 입력하거나 추정 제안을 명시적으로 허용해 주세요. 사진만으로 실제 크기를 확정하지 않습니다.');
   if(input.kind==='removal'&&!candidates.length)questions.push('숨길 독립 등록 구조물을 선택해 주세요. 원본 공유 모델·미등록 장애물은 정확한 모델 범위 확인이 필요하며 자동 제거하지 않습니다.');
-  let slot=null;
+  let slot=null,facadeSlots=[];
   if(input.kind==='facade'){
    slot=(await helpers.stationData(env,j.station_key,fetch,slotScope(j.actor,r))).slots.find(s=>s.alias===input.alias&&s.floor===r.floor&&metres(s.position,parse(r.position))<=12);
    if(!slot)questions.push('제보와 같은 층·12m 이내의 파사드 자리를 선택해 주세요.');
@@ -70,16 +70,20 @@ export async function runWork(env,id,helpers,external=null){
   }
   if(input.kind==='conversation'){
    const proposed=JSON.parse(raw);
-   if(proposed.kind==='facade')slot=(await helpers.stationData(env,j.station_key,fetch,slotScope(j.actor,r))).slots.find(s=>s.alias===proposed.facade_alias&&input.facade_aliases?.includes(s.alias)&&s.floor===r.floor&&metres(s.position,parse(r.position))<=12);
+   if(proposed.kind==='facade'){
+    facadeSlots=(await helpers.stationData(env,j.station_key,fetch,slotScope(j.actor,r))).slots;
+    slot=facadeSlots.find(s=>s.alias===proposed.facade_alias&&input.facade_aliases?.includes(s.alias)&&s.floor===r.floor&&metres(s.position,parse(r.position))<=12);
+   }
   }
-  const plan=parseWorkPlan(raw,{kind:j.kind,photos,candidates,slot,input,report:r});
+  const plan=parseWorkPlan(raw,{kind:j.kind,photos,candidates,slot,facadeSlots,input,report:r});
+  if(plan.facade_reframe&&JSON.stringify(plan.facade_reframe)!==JSON.stringify(external?.facade_reframe))throw Error('기준 파사드가 바뀌었습니다. 최신 면을 확인한 뒤 다시 요청하세요.');
   if(plan.confidence!==null&&plan.confidence<.7&&!plan.questions.length)plan.questions.push('AI 판단이 불확실합니다. 가림 없는 사진과 대상 설명을 보완해 주세요.');
   if(plan.questions.length)return finishJob(env,j,'needs_info',{questions:plan.questions,plan});
   const geometry=input.structure||plan.structure;
   const pid=crypto.randomUUID(),effects=[],faces={},stamp=now();let size=0;
   for(const targetId of plan.hide_ids){const asset=layer.assets[targetId];effects.push({collection:'assets',id:targetId,before:JSON.stringify(asset),after:{...asset,hidden:true},label:asset.name,action:'hide'});}
   for(const [side,f] of Object.entries(plan.faces)){
-   const px=plan.kind==='structure'?structurePixels(geometry.size,side):slot.px;
+   const px=plan.kind==='structure'?structurePixels(geometry.size,side):(plan.facade_slot||slot).px;
    if(f.artifact_id){
     if(!external)throw Error('외부 작업에 저장한 이미지가 필요합니다.');
     const a=await readDraftArtifact(env,f.artifact_id,j);if(a.px[0]!==px[0]||a.px[1]!==px[1])throw Error('생성 이미지가 대상 규격('+px.join('×')+' px)과 다릅니다.');
@@ -94,11 +98,12 @@ export async function runWork(env,id,helpers,external=null){
   }
   if(geometry?.parts)for(const part of geometry.parts){const textures=part.type==='plane'?[part.texture]:Object.values(part.facades||{});if(textures.some(side=>!faces[side]))throw Error('구성요소가 실제 제출하지 않은 사진 면을 사용합니다.');}
   const name=geometry?.name||slot?.name||plan.name||'승인 대상',target={name,alias:slot?.alias||'report-'+r.id,before:layer.facades?.[slot?.alias]?.front||slot?.image||null,px:faces.front?.px||null,...(geometry?{structure:geometry}:{}),...(slot?registrationTarget(slot):{})};
+  if(plan.facade_reframe)Object.assign(target,{slot:plan.facade_slot,facade_reframe:plan.facade_reframe,reframed:true});
   if(plan.kind==='structure'){const aid='structure-'+pid;effects.push({collection:'assets',id:aid,before:'null',after:{...geometry,id:aid,hidden:false,facades:Object.fromEntries(Object.keys(faces).map(side=>[side,'/api/public/proposal-images/'+pid+(side==='front'?'':'/'+side)])),proposal:pid},label:name,action:'create'});}
-  if(plan.kind==='facade'){if(!allowedKey(slot.alias))throw Error('파사드 자리 ID가 유효하지 않습니다.');effects.push({collection:'facades',id:slot.alias,before:JSON.stringify(layer.facades?.[slot.alias]??null),after:{front:'/api/public/proposal-images/'+pid,proposal:pid,at:stamp,...(target.slot?{slot:target.slot}:{})},label:name,action:'replace'});}
+  if(plan.kind==='facade'){if(!allowedKey(slot.alias))throw Error('파사드 자리 ID가 유효하지 않습니다.');effects.push({collection:'facades',id:slot.alias,before:JSON.stringify(layer.facades?.[slot.alias]??null),after:{front:'/api/public/proposal-images/'+pid,proposal:pid,at:stamp,...(target.slot?{slot:target.slot}:{}),...(target.reframed?{reframed:true}:{})},label:name,action:'replace'});}
   if(!effectsSafe(effects))throw Error('실행할 검증 대상이 없습니다.');
   target.effects=effects;
-  const meta={by:external?'dots':'server-ai',ai_job:j.id,report_version:j.report_version,faces,summary:plan.summary,provider:external?'dots':env.AI_PROVIDER||'anthropic',model:external?null:env.AI_MODEL,checks:null,...(slot?.registration?{facade_provenance:{dimension_basis:slot.dimension_basis,evidence:slot.dimension_evidence,uncertainty:slot.dimension_uncertainty}}:{}),...(external?{agent_link:external.link_id}:{}),...(plan.structure?{geometry_source:'agent-estimate',allow_estimate:true,structure_provenance:plan.structure_provenance}:{})};
+  const meta={by:external?'dots':'server-ai',ai_job:j.id,report_version:j.report_version,faces,summary:plan.summary,provider:external?'dots':env.AI_PROVIDER||'anthropic',model:external?null:env.AI_MODEL,checks:null,...(plan.facade_reframe?{facade_provenance:{dimension_basis:'estimated',evidence:plan.facade_reframe.evidence,uncertainty:plan.facade_reframe.uncertainty}}:slot?.registration?{facade_provenance:{dimension_basis:slot.dimension_basis,evidence:slot.dimension_evidence,uncertainty:slot.dimension_uncertainty}}:{}),...(external?{agent_link:external.link_id}:{}),...(plan.structure?{geometry_source:'agent-estimate',allow_estimate:true,structure_provenance:plan.structure_provenance}:{})};
   // Recheck access at save time: photo processing may span revocation or expiration.
   const linked=external?" AND EXISTS (SELECT 1 FROM agent_links WHERE id=? AND principal_id=? AND actor=? AND revoked_at IS NULL AND expires_at>?)":'',linkArgs=external?[external.link_id,external.principal,j.actor,now()]:[];
   const anchor=input.chat_message_id?" AND (SELECT id FROM work_messages WHERE report_id=? AND actor=? AND role='admin' ORDER BY rowid DESC LIMIT 1)=?":'',anchorArgs=input.chat_message_id?[r.id,j.actor,input.chat_message_id]:[];
@@ -174,8 +179,23 @@ export async function aiWorkApi(request,env,ctx,{json,body,bytes,me,stationData,
   const out=await db.batch(commands);return out[0].meta.changes?json({id:pr.id,status:'reverted',note:'이 작업이 변경한 대상만 복원했습니다. 다른 승인 결과는 유지됩니다.'}):json({error:'승인 후 대상이 다시 변경돼 자동 복원할 수 없습니다. 현재 상태를 검토하세요.'},409);
  }
  if(!r||r.status!=='accepted'||r.updated_at!==meta.report_version)return json({error:'제보가 변경됐습니다. 새 초안을 생성하세요.'},409);
- if(target.registration&&pr.reviewer!==me.approver)return json({error:'면을 확인한 승인자가 최신 초안을 최종 검토하세요.'},403);
+ if(privateFacadeTarget(target)&&pr.reviewer!==me.approver)return json({error:'작업을 맡긴 승인자가 최신 초안을 최종 검토하세요.'},403);
  const registration=registrationGuard(target,r,me.approver,meta.report_version);
+ if(target.facade_reframe){
+  // Recheck the actual anchor and its current neighbours, then claim that layer revision atomically.
+  const revision=(await db.prepare('SELECT revision FROM station_layers WHERE station_key=?').bind(pr.station_key).first())?.revision||0;
+  const slots=(await stationData(env,pr.station_key,fetch,slotScope(me.approver,r))).slots;
+  const base=slots.find(s=>s.alias===target.alias),{anchor,...intent}=target.facade_reframe;
+  try{
+   if(!base||JSON.stringify(publicSlot(base))!==JSON.stringify(anchor))throw Error('기준 파사드가 바뀌었습니다.');
+   const job=await db.prepare('SELECT * FROM report_jobs WHERE id=? AND report_id=? AND actor=?').bind(meta.ai_job,r.id,me.approver).first();
+   if(!job)throw Error('원래 작업을 확인할 수 없습니다.');
+   const checked=validateFacadeReframe(intent,r,base,slots,await workPhotos(db,job));
+   if(JSON.stringify(checked.slot)!==JSON.stringify(target.slot))throw Error('검토할 면의 위치·규격이 바뀌었습니다.');
+  }catch(e){return json({error:e.message+' 새 초안에서 다시 확인하세요.'},409);}
+  registration.sql+=' AND COALESCE((SELECT revision FROM station_layers WHERE station_key=?),0)=?';
+  registration.args.push(pr.station_key,revision);
+ }
  if(action==='ready'){
   if(pr.status!=='draft'||![v.geometry_checked,v.privacy_checked,v.preview_checked,v.effects_checked].every(x=>x===true))return json({error:'위치·크기, 모든 사진의 개인정보, 결과 모형, 숨김·교체 대상 모두를 확인하세요.'},400);
   const out=await db.prepare("UPDATE proposals SET status='ready',meta=? WHERE id=? AND status='draft' AND EXISTS (SELECT 1 FROM reports WHERE id=? AND status='accepted' AND updated_at=?) AND "+guard(effects)+' AND '+registration.sql).bind(JSON.stringify({...meta,checks:{geometry:true,privacy:true,preview:true,effects:true,by:me.approver,at:stamp}}),pr.id,r.id,meta.report_version,...guardArgs(effects,pr.station_key),...registration.args).run();
