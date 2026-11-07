@@ -93,7 +93,7 @@ button[aria-pressed=true] .task-connection-state{color:#dbe9de}
 #detailBody .evidence-view{grid-template-columns:minmax(0,1fr)}
 #detailBody .shot-view img{max-height:min(40dvh,360px);object-fit:contain}
 #ebiChatPanel{flex-direction:column;gap:8px}
-#ebiChatPanel .ebi-body{display:flex;flex-direction:column;flex:1;gap:8px}
+#ebiChatPanel .ebi-body{display:flex;flex-direction:column;flex:1;min-height:0;gap:8px}
 #ebiChatPanel .ebi-log{height:0;min-height:105px;flex:1}
 #ebiChatPanel .ebi-files{max-height:140px;overflow:auto}
 #ebiChatPanel .ebi-questions{max-height:110px;overflow:auto}
