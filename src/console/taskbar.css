@@ -1,6 +1,22 @@
+body{
+ display:flex;
+ flex-direction:column;
+ height:100dvh;
+ overflow:hidden;
+}
+.top{flex:none;position:relative}
+.console{flex:1;min-height:0;grid-template-rows:auto minmax(0,1fr);overflow:hidden}
+.console .inbox{min-height:0;max-height:100%;overflow:auto}
+.console .detail{
+ display:grid;
+ grid-template-rows:auto minmax(0,1fr);
+ gap:10px;
+ align-content:stretch;
+ min-height:0;
+ padding:12px;
+}
 .detail-taskbar{
- position:sticky;
- top:var(--console-header-height,58px);
+ position:relative;
  z-index:4;
  display:grid;
  gap:8px;
@@ -49,16 +65,76 @@
  background:var(--paper);
  box-shadow:0 8px 20px #17302a22;
 }
-.detail-taskbar-actions [data-task-target="resultBody"]{border-color:#b6c8b1}
-#detailBody,#ebiChatPanel,#resultBody,#proposalList,#map3dCard,#processingFold,#connectionHost,[data-proposal]{
- scroll-margin-top:calc(var(--console-header-height,58px) + var(--detail-taskbar-height,0px) + 12px);
+.detail-taskbar-actions button[aria-pressed=true]{background:var(--deep);color:white;border-color:var(--deep)}
+.task-connection-state{color:var(--muted);font-size:11px}
+button[aria-pressed=true] .task-connection-state{color:#dbe9de}
+#taskbarList,.task-work-wide{display:none}
+.detail-panes{
+ grid-row:2;
+ display:grid;
+ grid-template-columns:minmax(0,1fr);
+ grid-template-rows:minmax(0,1fr);
+ gap:10px;
+ min-width:0;
+ min-height:0;
+ overflow:hidden;
 }
+.detail-panes>[id]{display:none;min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain}
+.detail-panes>#detailBody{display:none}
+.detail[data-task-view="detailBody"] #detailBody,
+.detail[data-task-view="resultBody"] #resultBody{display:block}
+.detail[data-task-view="ebiChatPanel"] #ebiChatPanel{display:flex}
+.detail[data-task-view="map3dCard"] #map3dCard{display:grid}
+.detail[data-task-view="processingFold"] #processingFold,
+.detail[data-task-view="connectionHost"] #connectionHost{display:block}
+.detail:has(#detailTaskbar[hidden]){gap:0}
+.detail:has(#detailTaskbar[hidden]) .detail-panes{grid-template-rows:auto auto;align-content:start;overflow:auto}
+.detail:has(#detailTaskbar[hidden]) #connectionHost{display:block;overflow:visible}
+#detailBody .evidence-view{grid-template-columns:minmax(0,1fr)}
+#detailBody .shot-view img{max-height:min(40dvh,360px);object-fit:contain}
+#ebiChatPanel{flex-direction:column;gap:8px}
+#ebiChatPanel .ebi-body{display:flex;flex-direction:column;flex:1;gap:8px}
+#ebiChatPanel .ebi-log{height:0;min-height:105px;flex:1}
+#ebiChatPanel .ebi-files{max-height:140px;overflow:auto}
+#ebiChatPanel .ebi-questions{max-height:110px;overflow:auto}
+#ebiChatPanel .ebi-composer{flex:none}
+#map3dCard{grid-template-rows:auto auto minmax(0,1fr)}
+#map3dCard .map3d-box{height:100%;min-height:220px}
+.detail-panes .proposal-comparison{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.detail-panes .proposal-photo{height:clamp(100px,25dvh,210px)}
 .task-fold{padding:10px 14px}
 .task-fold>summary{padding:3px 0;font-size:14px}
 .task-fold[open]>summary{margin-bottom:8px}
 #connectionFoldStatus{margin-left:6px}
 #connectionHost>.ebi-connection{border:0;padding:0}
+@media(min-width:900px){
+ .console{grid-template-rows:minmax(0,1fr)}
+ .console .inbox{position:static;height:auto;grid-template-rows:auto auto auto minmax(0,1fr)}
+}
+@media(max-width:899px){
+ #taskbarList{display:inline-flex}
+ .console[data-report-open=true],.console[data-report-open=false]{grid-template-rows:minmax(0,1fr)}
+ .console[data-report-open=true] .inbox,.console[data-report-open=false] .detail{display:none}
+ .console[data-report-open=false] .inbox-list{max-height:none}
+}
+@media(min-width:1100px){
+ .task-work-narrow,#taskbarChat,#taskbarMap{display:none}
+ .task-work-wide{display:inline}
+ .detail:has(#ebiChatPanel[hidden]) .task-work-wide{display:none}
+ .detail:has(#ebiChatPanel[hidden]) .task-work-narrow{display:inline}
+ .detail:has(#ebiChatPanel:not([hidden])):is([data-task-view="detailBody"],[data-task-view="ebiChatPanel"]) .detail-panes{
+  grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);
+ }
+ .detail:has(#detailTaskbar:not([hidden]))[data-task-view="detailBody"] #ebiChatPanel{display:flex}
+ .detail[data-task-view="ebiChatPanel"] #detailBody{display:block}
+ .detail:has(#map3dCard:not([hidden])):is([data-task-view="resultBody"],[data-task-view="map3dCard"]) .detail-panes{
+  grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);
+ }
+ .detail[data-task-view="resultBody"] #map3dCard{display:grid}
+ .detail[data-task-view="map3dCard"] #resultBody{display:block}
+}
 @media(max-width:500px){
+ .console .detail{padding:8px;gap:8px}
  .detail-taskbar{padding:8px;gap:6px}
  .detail-taskbar-heading h2{font-size:14px}
  .detail-taskbar-actions{gap:4px}

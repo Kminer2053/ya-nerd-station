@@ -27,7 +27,8 @@ async function copyRequest(field,toast,error){
 export function bindDotsLink({api,toast,isCurrent},reportId){
  const panel=document.querySelector('#dotsLinkPanel');if(!panel)return;
  const fold=panel.closest('details#connectionHost'),foldStatus=fold?.querySelector('#connectionFoldStatus');
- const setFoldStatus=text=>{if(foldStatus&&foldStatus.textContent!==text)foldStatus.textContent=text;};
+ const taskStatus=fold&&document.querySelector('#taskbarConnectionState');
+ const setFoldStatus=text=>{for(const label of [foldStatus,taskStatus])if(label&&label.textContent!==text)label.textContent=text;};
  const status=panel.querySelector('#dotsLinkStatus'),consent=panel.querySelector('#dotsLinkConsent'),create=panel.querySelector('#dotsLinkCreate'),revoke=panel.querySelector('#dotsLinkRevoke'),reload=panel.querySelector('#dotsLinkReload'),error=panel.querySelector('#dotsLinkError'),box=panel.querySelector('#dotsLinkCodeBox'),field=panel.querySelector('#dotsLinkRequest');
  panel._stopLinkPoll?.();const cycle=panel._linkCycle=(panel._linkCycle||0)+1;let pollTimer;panel._stopLinkPoll=()=>{clearTimeout(pollTimer);panel._linkCycle++;};
  let busy=false,loaded=false,links=[];

@@ -33,35 +33,51 @@ async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{...(
 const ebiChat=createEbiChat({
  api,toast,
  async onWorkChange(id){if(detail?.report.id===id&&requestedReport===id){await openReport(id);await loadList();}},
- async onOpenDraft({reportId,proposalId}){
+ async onOpenDraft({reportId}){
   if(detail?.report.id!==reportId||requestedReport!==reportId||!await openReport(reportId))return;
-  const proposal=[...document.querySelectorAll('[data-proposal]')].find(el=>el.dataset.proposal===proposalId);
-  jumpTo(proposal||$('#resultBody'));
+  openTaskPanel('resultBody');
  },
 });
 ebiChat.mount($('#ebiChatPanel'));
-const taskbar=$('#detailTaskbar'),detailSection=taskbar.parentElement,header=$('.top');
-const reducedMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
-function updateScrollOffsets(){
- detailSection.style.setProperty('--console-header-height',header.offsetHeight+'px');
- detailSection.style.setProperty('--detail-taskbar-height',taskbar.offsetHeight+'px');
+const taskbar=$('#detailTaskbar'),detailSection=taskbar.parentElement,wideTaskLayout=matchMedia('(min-width:1100px)');
+function syncTaskViewButtons(){
+ const view=detailSection.dataset.taskView;
+ const selected=wideTaskLayout.matches?({ebiChatPanel:'detailBody',map3dCard:'resultBody'}[view]||view):view;
+ for(const button of taskbar.querySelectorAll('[data-task-target]'))button.setAttribute('aria-pressed',String(button.dataset.taskTarget===selected));
 }
-const taskbarObserver=typeof ResizeObserver==='function'?new ResizeObserver(updateScrollOffsets):null;
-taskbarObserver?.observe(header);
-taskbarObserver?.observe(taskbar);
-function jumpTo(target){
- if(!target||target.hidden)return;
+function showTaskView(id){
  $('#taskbarProgress').open=false;
- const disclosure=target.tagName==='DETAILS';
- if(disclosure)target.open=true;
- const focusTarget=disclosure?target.querySelector('summary'):target;
- focusTarget?.focus({preventScroll:true});
- target.scrollIntoView({behavior:reducedMotion()?'instant':'smooth',block:'start'});
+ if(id==='processingFold'||id==='connectionHost')document.getElementById(id).open=true;
+ detailSection.dataset.taskView=id;
+ if(detail)$('#app').dataset.reportOpen='true';
+ syncTaskViewButtons();
+}
+function reportMapProposal(){
+ const button=$('#proposalList [data-saved-preview]');
+ return button&&detail.proposals.find(p=>p.id===button.dataset.savedPreview);
+}
+function openReportMap({show=true}={}){
+ const proposal=reportMapProposal();if(!proposal)return;
+ if(!$('#map3dCard').hidden&&$('#map3dCard').dataset.proposal===proposal.id){if(show)showTaskView('map3dCard');return;}
+ previewSavedProposal(proposal,{show}).catch(e=>toast(e.message));
+}
+function openTaskPanel(id){
+ if(id==='map3dCard'){openReportMap();return;}
+ showTaskView(id);
+ if(id==='resultBody'&&wideTaskLayout.matches)openReportMap({show:false});
 }
 taskbar.addEventListener('click',event=>{
  const button=event.target.closest('[data-task-target]');
- if(button)jumpTo(document.getElementById(button.dataset.taskTarget));
+ if(button)openTaskPanel(button.dataset.taskTarget);
 });
+wideTaskLayout.addEventListener('change',()=>{
+ syncTaskViewButtons();
+ if(wideTaskLayout.matches&&detailSection.dataset.taskView==='resultBody')openReportMap({show:false});
+});
+$('#taskbarList').onclick=()=>{
+ $('#app').dataset.reportOpen='false';
+ ($('#inboxList button.on')||$('#fStation')).focus();
+};
 function renderTaskbar(report,approver){
  taskbar.hidden=!report;
  $('#taskbarChat').hidden=!approver;
@@ -72,7 +88,7 @@ function renderTaskbar(report,approver){
  $('#taskbarStage').innerHTML=stagePill(report);
  $('#taskbarProgressCount').textContent=(progressState(report).at+1)+' / '+STAGES.length;
  $('#taskbarProgressSteps').innerHTML=progressLine(report);
- updateScrollOffsets();
+ syncTaskViewButtons();
 }
 const selectableReports=()=>list.filter(report=>report.batch_eligible).map(report=>report.id);
 const batchControls=createBatchControls({
@@ -85,10 +101,17 @@ function syncBatchSelection(){
  for(const input of document.querySelectorAll('[data-batch-report]'))input.checked=batchSelection.has(input.dataset.batchReport);
  batchControls.selectionChanged();
 }
-addEventListener('pagehide',event=>{ebiChat.clear();if(!event.persisted)taskbarObserver?.disconnect();});
+addEventListener('pagehide',()=>ebiChat.clear());
 $('#capturePlacement').onclick=async()=>{
  const button=$('#capturePlacement'),report=detail?.report.id,actor=session.approver,previewEpoch=savedPreviewEpoch;if(!scene||!report)return;button.disabled=true;$('#captureStatus').textContent='배치 화면 캡처 중…';
- try{const image=await scene.capture();if(detail?.report.id!==report||session.approver!==actor||previewEpoch!==savedPreviewEpoch)throw Error('계정·제보·수정안이 바뀌었습니다. 현재 화면에서 다시 캡처하세요.');const blob=await(await fetch(image)).blob();await ebiChat.attachImage(blob,{name:'지도 배치 확인.jpg',note:'현재 수정안의 지도 배치 화면입니다. 보완할 점: '});$('#captureStatus').textContent='채팅에 첨부했습니다. 수정할 점을 적고 전송하세요.';$('#ebiChatPanel').scrollIntoView({behavior:'smooth',block:'start'});}
+ try{
+  const image=await scene.capture(),blob=await(await fetch(image)).blob();
+  if(detail?.report.id!==report||session.approver!==actor||previewEpoch!==savedPreviewEpoch)throw Error('계정·제보·수정안이 바뀌었습니다. 현재 화면에서 다시 캡처하세요.');
+  await ebiChat.attachImage(blob,{name:'지도 배치 확인.jpg',note:'현재 수정안의 지도 배치 화면입니다. 보완할 점: ',mapCapture:true});
+  $('#captureStatus').textContent='채팅에 첨부했습니다. 수정할 점을 적고 전송하세요.';
+  showTaskView('ebiChatPanel');
+  $('#ebiText').focus();
+ }
  catch(error){$('#captureStatus').textContent=error.message;toast(error.message);}finally{button.disabled=false;}
 };
 function syncUrl(){const q=new URLSearchParams(),serviceOrigin=new URLSearchParams(location.search).get('serviceOrigin');if(['localhost','127.0.0.1'].includes(location.hostname)&&/^http:\/\/(?:127\.0\.0\.1|localhost):4210$/.test(serviceOrigin||''))q.set('serviceOrigin',serviceOrigin);if($('#fStation').value)q.set('station',$('#fStation').value);q.set('stage',stage);if(detail)q.set('report',detail.report.id);history.replaceState(null,'','?'+q);}
@@ -103,6 +126,7 @@ function renderWho(){
   connection.open=false;
   delete connection.dataset.connected;
   $('#connectionFoldStatus').textContent='연결 상태 확인 중…';
+  $('#taskbarConnectionState').textContent='';
  }
  $('#who').hidden=!a;
  $('#who').textContent=a?'승인자 '+a:'';
@@ -112,6 +136,7 @@ function renderWho(){
  batchControls.session(a);
  ebiChat.report(detail,a);
  renderTaskbar(detail?.report,Boolean(a));
+ if(!a&&['ebiChatPanel','connectionHost','map3dCard'].includes(detailSection.dataset.taskView))showTaskView('detailBody');
  if(a&&!detail)bindDotsLink({api,toast,isCurrent:()=>session.approver===a&&!detail},null);
 }
 function openLogin(){if($('#loginDialog').open)return;$('#loginError').textContent=session.approvers_configured===false?'승인자 계정이 아직 설정되지 않았어요. 운영자에게 문의하세요.':'';$('#loginDialog').showModal();$('#loginName').focus();}
@@ -142,7 +167,7 @@ async function loadList(){
 }
 function changeListScope(){batchSelection.clear();list=[];$('#inboxList').replaceChildren();syncBatchSelection();syncUrl();loadList();}
 $('#stageBar').addEventListener('click',e=>{const b=e.target.closest('[data-stage]');if(!b||b.dataset.stage===stage)return;stage=b.dataset.stage;changeListScope();});
-$('#inboxList').addEventListener('click',e=>{const b=e.target.closest('[data-report]');if(b)openReport(b.dataset.report);});
+$('#inboxList').addEventListener('click',e=>{const b=e.target.closest('[data-report]');if(b)openReport(b.dataset.report,{workspace:true});});
 $('#inboxList').addEventListener('change',e=>{
  const input=e.target.closest('[data-batch-report]');if(!input)return;
  if(input.checked)batchSelection.add(input.dataset.batchReport);else batchSelection.delete(input.dataset.batchReport);
@@ -177,7 +202,7 @@ function decideCard(r){if(['queued','applied'].includes(r.status))return '<secti
  +(detail.locked?'<p class="fine">서울역은 최종 승인해도 “반영 대기”로 보관합니다. 잠금 해제 후 별도 반영이 필요합니다.</p>':'')+'</section>';}
 function adoptionCard(r){if(!session.approver||!['new','facade','removed'].includes(r.type)||!['review','held','accepted'].includes(r.status))return '';return '<section class="card adoption"><h3>① 제보 채택 → ② 초안·보정 → ③ 최종 승인</h3><p>채택은 작업을 시작한다는 뜻이며 지도에는 반영되지 않습니다. '+(detail.locked?'최종 승인 결과도 반영 대기로 보관됩니다.':'최종 승인 후 공개 지도에 반영됩니다.')+'</p>'+(r.status==='accepted'?'<b>채택됨 · 아래 AI 자동 작업 또는 수동 작업대에서 초안을 준비하세요.</b>':'<button type="button" class="primary" data-decide="accepted">제보 채택 · 작업 시작</button>')+'</section>';}
 const callout='<section class="card callout"><div><b>보정·승인은 승인자가 해요</b><p class="fine">사진 원본 확인, 파사드 정면 보정, 제안 승인과 보류·반려 판단은 로그인한 승인자만 할 수 있어요.</p></div><button type="button" class="primary" data-login>승인자 로그인</button></section>';
-async function openReport(id){
+async function openReport(id,{workspace=false}={}){
  const revision=++detailRequest,actor=session.approver;
  requestedReport=id;
  savedPreviewEpoch++;stopWorkPoll();
@@ -205,15 +230,21 @@ async function openReport(id){
  if(reason!=null&&$('#reason'))$('#reason').value=reason;
  renderTaskbar(r,approver);
  renderProposals();
+ if(!sameReport||workspace||detailSection.dataset.taskView==='processingFold'&&$('#processingFold').hidden)showTaskView('detailBody');
+ if(workspace)$('#detailBody').focus({preventScroll:true});
  if(approver)bindFacadeSlot(detail,{api,toast,onSaved:async id=>{await openReport(id);await loadList();}});
  for(const b of document.querySelectorAll('[data-login]'))b.onclick=openLogin;
  if(approver){
   for(const b of document.querySelectorAll('[data-decide]'))b.onclick=()=>decide(b.dataset.decide);
   if($('#reanalyze'))$('#reanalyze').onclick=async()=>{try{await api('/api/console/reports/'+r.id+'/analyze',{method:'POST',body:'{}'});toast('다시 정리했어요.');openReport(r.id);}catch(e){toast(e.message);}};
  }
- $('#map3dCard').hidden=true;
- const latest=detail.proposals.find(p=>['draft','ready'].includes(p.status)&&p.meta?.ai_job);
- if(approver&&latest)previewSavedProposal(latest,{scroll:false}).catch(e=>toast(e.message));
+ const map=$('#map3dCard'),proposal=reportMapProposal(),view=detailSection.dataset.taskView;
+ if(!sameReport||!proposal||map.dataset.proposal!==proposal.id||map.dataset.status!==proposal.status){
+  map.hidden=true;
+  delete map.dataset.proposal;
+ }
+ if(view==='map3dCard'&&!proposal)showTaskView('resultBody');
+ else if(view==='map3dCard'||view==='resultBody'&&wideTaskLayout.matches)openReportMap({show:false});
  return next;
 }
 // Photo switching: the strip, the caption list, and (for approvers) the correction bench follow the same photo.
@@ -224,7 +255,9 @@ function renderProposals(){
  const all=detail.proposals;
  $('#proposalList').innerHTML=proposalResultsMarkup(all,{report:detail.report,approver:Boolean(session.approver),origin:location.origin});
  for(const b of document.querySelectorAll('[data-final]'))b.onclick=async()=>{const checked=b.closest('[data-checks]').querySelector('[name=final]').checked;if(!checked){toast('저장된 수정안과 개인정보·변경 대상을 확인해 주세요.');return;}if(!confirm('지금 표시된 수정안을 최종 승인하여 공개 지도에 반영할까요?'))return;b.disabled=true;try{const v=await api('/api/console/proposals/'+b.dataset.final+'/approve',{method:'POST',body:JSON.stringify({confirm:true,geometry_checked:true,privacy_checked:true,preview_checked:true,effects_checked:true})});toast(v.note);await refresh();}catch(e){toast(e.message);b.disabled=false;}};
- for(const b of document.querySelectorAll('[data-saved-preview]'))b.onclick=()=>previewSavedProposal(all.find(p=>p.id===b.dataset.savedPreview)).catch(e=>toast(e.message));
+ const preview=$('#proposalList [data-saved-preview]');
+ $('#taskbarMap').hidden=!preview;
+ if(preview)preview.onclick=()=>openReportMap();
  for(const b of document.querySelectorAll('[data-ready]'))b.onclick=async()=>{const box=b.closest('[data-checks]');b.disabled=true;try{await api('/api/console/proposals/'+b.dataset.ready+'/ready',{method:'POST',body:JSON.stringify({geometry_checked:box.querySelector('[name=geometry]').checked,privacy_checked:box.querySelector('[name=privacy]').checked,preview_checked:box.querySelector('[name=preview]').checked,effects_checked:box.querySelector('[name=effects]')?.checked===true})});await refresh();toast('초안 확인이 끝났습니다. 최종 승인 버튼으로 처리하세요.');}catch(e){toast(e.message);b.disabled=false;}};
  for(const b of document.querySelectorAll('[data-approve]'))b.onclick=()=>decideProposal(b.dataset.approve,'approve');
  for(const b of document.querySelectorAll('[data-reject]'))b.onclick=()=>decideProposal(b.dataset.reject,'reject');
@@ -325,29 +358,36 @@ async function makeProposal({by='approver'}={}){
  const r=detail.report,active=bench,button=$('#makeProposal');bench.saving=true;lockBench(true);
  try{if(bench.loading)throw Error('사진 로드가 끝난 뒤 저장하세요.');if(bench.structure){bench.structure=readStructure(r.station_key);bench.slot=structureSlot(bench.structure,bench.side);}const faces=bench.structure?await finalFaces(true):null,url=faces?.front.image||finalImage().url;
   const v=await api('/api/console/proposals',{method:'POST',body:JSON.stringify({report_id:r.id,report_version:r.updated_at,kind:bench.structure?'structure':'facade',target:bench.structure?{structure:bench.structure}:{alias:bench.slot.alias},...(faces?{faces}:{image:url}),meta:{quad:bench.quad.map(p=>p.map(n=>Math.round(n*10)/10)),photo:r.photos[bench.photo].id,levels:bench.levels,people:bench.people,blurs:bench.blurs,by}})});
-  toast(v.status==='draft'?'초안을 저장했어요. 아래 저장된 모든 면을 확인하고 확정하세요.':'제안을 만들었어요. 확인 후 승인하세요.');await loadList();await openReport(r.id);$('#proposalList').scrollIntoView({behavior:'smooth',block:'start'});return v;}catch(e){if(bench===active){bench.saving=false;lockBench(false);button.disabled=bench.loading;}toast(e.message);throw e;}
+  toast(v.status==='draft'?'초안을 저장했어요. 저장된 모든 면을 확인하고 확정하세요.':'제안을 만들었어요. 확인 후 승인하세요.');await loadList();if(await openReport(r.id))openTaskPanel('resultBody');return v;}catch(e){if(bench===active){bench.saving=false;lockBench(false);button.disabled=bench.loading;}toast(e.message);throw e;}
 }
 function ensureCesium(){if(window.Cesium)return Promise.resolve();return new Promise((resolve,reject)=>{const css=document.createElement('link');css.rel='stylesheet';css.href='https://cesium.com/downloads/cesiumjs/releases/1.142/Build/Cesium/Widgets/widgets.css';document.head.append(css);const script=document.createElement('script');script.src='https://cesium.com/downloads/cesiumjs/releases/1.142/Build/Cesium/Cesium.js';script.onload=resolve;script.onerror=()=>reject(Error('지도 렌더러 연결 실패. 초안과 입체 모형은 유지됩니다.'));document.head.append(script);});}
 async function previewImages(images){
  const out={};for(const [side,url] of Object.entries(images||{})){const u=new URL(url,location.origin);if(u.origin!==location.origin||!/^\/api\/console\/proposal-images\/[a-f0-9-]{36}(?:\/(?:front|left|right|back))?$/.test(u.pathname))throw Error('현재 수정안의 이미지만 미리볼 수 있습니다.');const response=await fetch(u.href,{credentials:'same-origin'});if(!response.ok)throw Error('초안 이미지를 불러오지 못했습니다.');const blob=await response.blob();if(blob.size>4_800_000||!['image/png','image/jpeg'].includes(blob.type))throw Error('미리보기 이미지 규격을 확인하세요.');out[side]=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('이미지 미리보기 변환 실패'));reader.readAsDataURL(blob);});}return out;
 }
-async function previewSavedProposal(p,{scroll=true}={}){
+async function previewSavedProposal(p,{show=true}={}){
  const previewEpoch=++savedPreviewEpoch;
+ const startView=detailSection.dataset.taskView,actor=session.approver;
  const r=detail.report,st=connectedStation(r.station_key);if(!p||!st)throw Error('저장된 수정안과 연결된 지도를 확인해 주세요.');
  const preview=p.image?await previewImages(p.images||{front:p.image}):{};
  const id=r.id,slots=p.kind==='facade'?(await api('/api/console/station?key='+encodeURIComponent(r.station_key)+'&report_id='+r.id)).slots:[],slot=p.target.slot||slots.find(s=>s.alias===p.target.alias),geometry=p.target.structure;
- if(detail.report.id!==id||previewEpoch!==savedPreviewEpoch)return;
+ const current=()=>detail?.report.id===id&&session.approver===actor&&previewEpoch===savedPreviewEpoch&&startView===detailSection.dataset.taskView;
+ if(!current())return;
+ if(st.id!=='S202103')await ensureCesium();
+ if(!current())return;
  const canRevise=Boolean(session.approver)&&r.status==='accepted';
- $('#map3dCard').hidden=false;$('#map3dTitle').textContent=p.status==='applied'?'반영 결과 · 읽기 전용':'저장된 수정안 · 읽기 전용';
+ const map=$('#map3dCard');
+ map.hidden=false;map.dataset.proposal=p.id;map.dataset.status=p.status;
+ if(show)showTaskView('map3dCard');
+ $('#map3dTitle').textContent=p.status==='applied'?'반영 결과 · 읽기 전용':'저장된 수정안 · 읽기 전용';
  $('#map3dNote').textContent=canRevise?'배치를 확인한 뒤 캡처와 설명을 작업 채팅으로 보내 보완을 요청하세요.':'저장된 위치와 이미지를 지도에서 확인합니다.';
  $('#capturePlacement').hidden=!canRevise;$('#captureStatus').textContent='';
- $('#floor').innerHTML=st.floors.map(f=>'<option>'+f+'</option>').join('');if(st.id!=='S202103')await ensureCesium();
+ $('#floor').innerHTML=st.floors.map(f=>'<option>'+f+'</option>').join('');
  scene||=await createScene(()=>{},{labels:{loading:'배치 지도 연결 중…',ready:'저장된 배치 · 읽기 전용'}});
  const assets=(p.target.effects||[]).filter(e=>e.collection==='assets').map(e=>({...e.after,...(e.action==='create'?{facades:preview}:{})}));
  const project={schema_version:1,site_id:st.id,station:{...st,default_floor:r.floor},name:st.name,source:st.id==='S202103'?'seoul-snapshot':'vworld',tileset_url:'',assets,points:[],connections:[],routes:[],observations:[],overlays:slot?[{...slot,image:preview.front}]:[]};
  if(scene.stationId!==st.id){await scene.connect(project);scene.stationId=st.id;}else scene.render(project);scene.setFloor(r.floor);scene.setGrid(false);
  const pos=geometry?.position||slot?.position||r.position;if(slot)scene.focusFacade({floor:slot.floor,longitude:pos[0],latitude:pos[1],height:pos[2],cameraHeading:slot.heading,surfaceWidth:slot.surface?.[0],surfaceHeight:slot.surface?.[1],label:slot.name,imageId:slot.alias});else scene.focus(pos);
- if(slot)scene.previewFacade(slot.alias,preview.front);if(scroll)$('#map3dCard').scrollIntoView({behavior:'smooth',block:'nearest'});
+ if(slot)scene.previewFacade(slot.alias,preview.front);
 }
 // 3D preview on the Seoul scene (service bridge): fly to the slot's front and show the rectified image there.
 async function preview3d(){
@@ -359,7 +399,7 @@ async function preview3dUnlocked(active){
  const faces=bench.structure?await finalFaces():null;
  if(bench!==active)throw Error('다른 제보로 이동했습니다. 다시 작업하세요.');
  const s=bench.slot,{canvas}=finalImage(),k=Math.min(1,1024/canvas.width),c=document.createElement('canvas');c.width=Math.round(canvas.width*k);c.height=Math.round(canvas.height*k);c.getContext('2d').drawImage(canvas,0,0,c.width,c.height);
- $('#map3dCard').hidden=false;$('#capturePlacement').hidden=false;$('#captureStatus').textContent='';
+ $('#map3dCard').hidden=false;$('#capturePlacement').hidden=false;$('#captureStatus').textContent='';showTaskView('map3dCard');
  const st=connectedStation(detail.report.station_key),url=c.toDataURL('image/jpeg',.88);
  $('#map3dTitle').textContent=st.name+' · 배치 미리보기 (저장되지 않음)';
  $('#map3dNote').textContent=bench.structure?'지도 바닥을 클릭하면 초안 좌표가 이동합니다. 보정한 면별 사진을 배치 미리보기에 입힙니다. 최종 승인 전 지도에는 저장되지 않아요.':'보정된 사진을 파사드 자리에 미리 입힙니다.';
@@ -370,7 +410,7 @@ async function preview3dUnlocked(active){
  if(scene.stationId!==st.id){await scene.connect(project);scene.stationId=st.id;}else scene.render(project);scene.setFloor(s.floor);scene.setGrid(false);
  scene.focusFacade({floor:s.floor,longitude:s.position[0],latitude:s.position[1],height:s.position[2],cameraHeading:s.heading,surfaceWidth:s.surface?.[0],surfaceHeight:s.surface?.[1],label:s.name,imageId:s.alias,model:s.model,tdId:s.td_id});
  if(!bench.structure)scene.previewFacade(s.alias,url);
- $('#map3dCard').scrollIntoView({behavior:'smooth',block:'nearest'});toast('배치 미리보기예요. 지도에는 저장되지 않아요.');
+ toast('배치 미리보기예요. 지도에는 저장되지 않아요.');
 }
 addEventListener('resize',()=>{if(bench?.src)drawPhoto();});
 

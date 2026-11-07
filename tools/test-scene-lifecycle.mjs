@@ -13,7 +13,25 @@ try{
  globalThis.window={Cesium:C};globalThis.document={querySelector:id=>ids.get(id),createElement:tag=>Object.assign(new Node(),{tag})};globalThis.location={hostname:'127.0.0.1',origin:'http://127.0.0.1:4197',search:'?serviceOrigin=http%3A%2F%2F127.0.0.1%3A4210'};globalThis.addEventListener=(n,f)=>listeners.set(n,f);globalThis.removeEventListener=(n,f)=>{if(listeners.get(n)===f)listeners.delete(n);};
  const scene=await createScene(()=>{}),daejeon=stationProject(stations[1]),another=stationProject(stations[2]),seoul=stationProject(stations[0]);for(const p of [daejeon,another,seoul]){p.assets=[];p.points=[];p.connections=[];p.routes=[];}scene.setGrid(false);
  const first=scene.connect(daejeon);await tick();assert.equal(viewers.length,1);const stale=tile(),second=scene.connect(another);await tick();pending[0].resolve(stale);await first;await tick();assert(stale.destroyed,'late result of the previous station is destroyed');const active=tile();pending.at(-1).resolve(active);await tick();assert.equal(ids.get('#sceneStatus').dataset.mapState,'rendering');active.tileVisible.raise();viewers[0].scene.postRender.raise();await second;assert.equal(ids.get('#sceneStatus').dataset.mapState,'ready');assert.equal(active.tileVisible.listeners.size,0);
+ const native=viewers[0].scene,createElement=document.createElement;
+ native.canvas={width:3200,height:1600};
+ let renderRequests=0,drawingFrame=false,copies=0;
+ native.requestRender=()=>{renderRequests++;};
+ const jpeg='data:image/jpeg;base64,QUFBQQ==';
+ document.createElement=tag=>tag!=='canvas'?createElement(tag):{
+  getContext:()=>({drawImage(source,x,y,width,height){assert(drawingFrame,'WebGL pixels are read inside the freshly rendered frame');assert.deepEqual([source,x,y,width,height],[native.canvas,0,0,2048,1024]);copies++;}}),
+  toDataURL:mime=>{assert.equal(mime,'image/jpeg');return jpeg;},
+ };
+ const captured=scene.capture();
+ assert.equal(renderRequests,1,'an idle view must request a fresh frame');
+ assert.equal(copies,0);assert.equal(native.postRender.listeners.size,1);
+ await assert.rejects(scene.capture(),/캡처 처리 중/);
+ drawingFrame=true;native.postRender.raise();drawingFrame=false;
+ assert.equal(await captured,jpeg);assert.equal(copies,1);assert.equal(native.postRender.listeners.size,0);
+ const abandonedCapture=assert.rejects(scene.capture(),/지도가 바뀌었습니다/);
+ document.createElement=createElement;
  scene.setFloor(another.station.floors.at(-1));assert.equal(active.tileVisible.listeners.size,1);await scene.connect(seoul);await tick();assert.equal(handlersDestroyed,1);assert(viewers[0].destroyed,'switching to the curated Seoul scene releases the native WebGL viewer');assert.equal(active.tileVisible.listeners.size,0);const frame=ids.get('#map').children.find(n=>n.id==='seoulMap');assert(frame);
+ await abandonedCapture;assert.equal(native.postRender.listeners.size,0);
  const message=data=>listeners.get('message')({origin:'http://127.0.0.1:4210',source:frame.contentWindow,data:{channel:'station-toolkit',...data}});message({event:'ready'});await tick();assert.equal(ids.get('#sceneStatus').dataset.mapState,'rendering','bridge availability is separate from actual first frame');message({event:'error',floor:'2F',message:'missing tile'});assert.equal(ids.get('#sceneStatus').dataset.mapState,'failed');message({event:'rendered',floor:'2F'});assert.equal(ids.get('#sceneStatus').dataset.mapState,'ready');const retry=ids.get('#map').children.find(n=>n.children.some(c=>c.tag==='button'));assert.equal(retry.style.display,'none','successful recovery hides retry controls even with an inline flex style');assert(frame.messages.some(m=>m.action==='render'));assert(frame.messages.some(m=>m.action==='floor'));
  const late=scene.connect(daejeon);await tick();assert.equal(viewers.length,2);assert(!ids.get('#map').children.includes(frame),'station switching removes the old iframe');scene.dispose();const final=tile();pending.at(-1).resolve(final);await late;await tick();assert(final.destroyed);assert(viewers[1].destroyed);assert.equal(handlersDestroyed,2);assert.equal(listeners.size,0,'dispose removes the parent message listener');scene.dispose();
  // A first-tile failure can happen after the bridge consumed its view commands.

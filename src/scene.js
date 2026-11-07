@@ -166,8 +166,34 @@ async function createNativeScene(onPick,setStatus){
  // Stand in front of a facade (normal = cameraHeading) and look at it.
  function focusFacade(f){if(disposed)return;if(f.floor&&f.floor!==floor){floor=f.floor;document.querySelector('#floor').value=floor;draw();}const h=f.cameraHeading*Math.PI/180,d=Math.max(6,(f.surfaceWidth||3)*1.6),k=111320*Math.cos(f.latitude*Math.PI/180);
   viewer.camera.flyTo({destination:position([f.longitude+Math.sin(h)*d/k,f.latitude+Math.cos(h)*d/111320,f.height+.4]),orientation:{heading:C.Math.toRadians((f.cameraHeading+180)%360),pitch:C.Math.toRadians(-6),roll:0},duration:.9});}
+ let cancelCapture=null;
+ function capture(){
+  if(disposed||!modelReady)throw Error('지도 표시를 먼저 확인하세요.');
+  if(cancelCapture)throw Error('캡처 처리 중입니다.');
+  return new Promise((resolve,reject)=>{
+   const scene=viewer.scene;
+   const cleanup=()=>{remove();clearTimeout(timer);cancelCapture=null;};
+   const remove=scene.postRender.addEventListener(()=>{
+    cleanup();
+    try{
+     const source=scene.canvas;
+     if(!source.width||!source.height)throw Error('지도 화면이 준비되지 않았습니다.');
+     const k=Math.min(1,2048/Math.max(source.width,source.height)),canvas=document.createElement('canvas');
+     canvas.width=Math.max(1,Math.round(source.width*k));canvas.height=Math.max(1,Math.round(source.height*k));
+     canvas.getContext('2d').drawImage(source,0,0,canvas.width,canvas.height);
+     const image=canvas.toDataURL('image/jpeg',.86);
+     if(image.length>5_400_000)throw Error('캡처 용량이 큽니다. 시야를 좁혀 다시 시도하세요.');
+     resolve(image);
+    }catch(error){reject(error);}
+   });
+   cancelCapture=message=>{cleanup();reject(Error(message));};
+   const timer=setTimeout(()=>cancelCapture('지도 화면을 캡처하지 못했습니다. 지도가 표시된 뒤 다시 시도하세요.'),3000);
+   // On-demand rendering may skip an idle frame, and WebGL clears its buffer after drawing.
+   scene.requestRender();
+  });
+ }
  return{connect,focusFacade,render(p){if(disposed||station&&stationOf(p).id!==station.id)return;project=p;draw();},setFloor(v){if(disposed||!station?.floors.includes(v))return;floor=v;const watch=modelReady;draw();fit();if(watch)monitorFloor();},setGrid(v){if(disposed)return;grid=v;drawGrid();viewer.scene.requestRender();},fit,focus(p){if(!disposed)viewer.camera.flyTo({destination:position([p[0],p[1]-.00025,p[2]+25]),orientation:{heading:0,pitch:C.Math.toRadians(-42),roll:0},duration:.5});},
-  capture(){if(disposed||!modelReady)throw Error('지도 표시를 먼저 확인하세요.');viewer.render();const source=viewer.scene.canvas,k=Math.min(1,2048/Math.max(source.width,source.height)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(source.width*k));canvas.height=Math.max(1,Math.round(source.height*k));canvas.getContext('2d').drawImage(source,0,0,canvas.width,canvas.height);const image=canvas.toDataURL('image/jpeg',.86);if(image.length>5_400_000)throw Error('캡처 용량이 큽니다. 시야를 좁혀 다시 시도하세요.');return image;},
-  dispose(){if(disposed)return;disposed=true;loadVersion++;loading?.abort();visibleAbort?.abort();handler.destroy?.();entityPick.clear();viewer.destroy?.();},
+  capture,
+  dispose(){if(disposed)return;disposed=true;cancelCapture?.('지도가 바뀌었습니다. 현재 화면에서 다시 캡처하세요.');loadVersion++;loading?.abort();visibleAbort?.abort();handler.destroy?.();entityPick.clear();viewer.destroy?.();},
  };
 }

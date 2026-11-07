@@ -284,12 +284,31 @@ export function createEbiChat({api,toast,onWorkChange,onOpenDraft}){
   }
   ui.files.value='';s.requestId=null;s.error=errors.join(' ');renderFiles();compose();
  }
- async function attachImage(blob,{name='배치 확인.png',note=''}={}){
+ function assertMapFrame(canvas){
+  const sample=document.createElement('canvas');sample.width=sample.height=16;
+  const ctx=sample.getContext('2d');ctx.drawImage(canvas,0,0,16,16);
+  const {data}=ctx.getImageData(0,0,16,16);
+  for(let i=0;i<data.length;i+=4){
+   if(data[i+3]>0&&Math.max(data[i],data[i+1],data[i+2])>8)return;
+  }
+  throw Error('지도 화면이 캡처되지 않았습니다. 지도가 보이는 상태에서 다시 캡처하세요.');
+ }
+ async function attachImage(blob,{name='배치 확인.png',note='',mapCapture=false}={}){
   if(!context||!owner||!['review','held','accepted'].includes(context.report.status))throw Error('작업할 제보를 선택한 뒤 이미지를 첨부하세요.');
   const operationOwner=owner,operationEpoch=epoch,id=context.report.id,s=stateFor(id);if(s.sending)throw Error('현재 전송을 마친 뒤 이미지를 첨부하세요.');
   if(s.items.length>=MAX_FILES)throw Error('첨부는 한 번에 8개까지입니다.');
   const image=await createImageBitmap(blob);let file;
-  try{if(operationOwner!==owner||operationEpoch!==epoch||!current(id))throw Error('이미지를 준비하는 동안 계정이나 제보가 바뀌었습니다. 현재 제보에서 다시 첨부하세요.');const k=Math.min(1,2048/Math.max(image.width,image.height)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.width*k));canvas.height=Math.max(1,Math.round(image.height*k));canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);let output=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(!output||output.size>MAX_BYTES){output=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.86));name=name.replace(/\.png$/i,'.jpg');}if(!output||output.size>MAX_BYTES)throw Error('이미지를 4MB 이하로 줄여 다시 첨부하세요.');name=name.replace(/\.[^.]+$/,'')+(output.type==='image/png'?'.png':'.jpg');file=new File([output],name,{type:output.type});}finally{image.close();}
+  try{
+   if(operationOwner!==owner||operationEpoch!==epoch||!current(id))throw Error('이미지를 준비하는 동안 계정이나 제보가 바뀌었습니다. 현재 제보에서 다시 첨부하세요.');
+   const k=Math.min(1,2048/Math.max(image.width,image.height)),canvas=document.createElement('canvas');
+   canvas.width=Math.max(1,Math.round(image.width*k));canvas.height=Math.max(1,Math.round(image.height*k));
+   canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
+   if(mapCapture)assertMapFrame(canvas);
+   let output=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
+   if(!output||output.size>MAX_BYTES)output=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.86));
+   if(!output||output.size>MAX_BYTES)throw Error('이미지를 4MB 이하로 줄여 다시 첨부하세요.');
+   name=name.replace(/\.[^.]+$/,'')+(output.type==='image/png'?'.png':'.jpg');file=new File([output],name,{type:output.type});
+  }finally{image.close();}
   if(operationOwner!==owner||operationEpoch!==epoch||!current(id))throw Error('이미지를 준비하는 동안 계정이나 제보가 바뀌었습니다. 현재 제보에서 다시 첨부하세요.');
   addFiles([file]);if(note){s.text+=(s.text?'\n':'')+note;ui.text.value=s.text;compose();}ui.text.focus();toast('이미지를 첨부했습니다. 수정할 점을 적고 전송하세요.');
  }

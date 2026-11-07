@@ -4,6 +4,7 @@ import {createEbiChat} from '../src/console/ebi-chat.js';
 // Execute the real mount/report/renderStatus controller without a network or a
 // browser dependency. This catches closure/DOM update errors, not just labels.
 const nodes=new Map();
+let sampledPixels=new Uint8ClampedArray([0,0,0,255]);
 class Element{
  constructor(tag='div'){this.tagName=tag;this.children=[];this.dataset={};this.attributes={};this.textContent='';this.value='';this.checked=false;this.disabled=false;this.hidden=false;this.isConnected=true;this.scrollTop=0;this.scrollHeight=0;this.clientHeight=0;}
  set innerHTML(value){this._html=value;for(const [,id]of value.matchAll(/\bid="([^"]+)"/g)){const node=new Element();node.id=id;nodes.set(id,node);}}
@@ -21,7 +22,7 @@ class Element{
  replaceWith(node){this.parent.insertBefore(node,this);this.remove();}
  before(){} after(){} remove(){if(this.parent)this.parent.children=this.parent.children.filter(child=>child!==this);this.parent=null;this.isConnected=false;}
  setAttribute(name,value){this.attributes[name]=value;}
- getContext(){return {drawImage(){}};}
+ getContext(){return {drawImage(){},getImageData:()=>({data:sampledPixels})};}
  toBlob(resolve,type){resolve(new Blob(['fixture'],{type}));}
  focus(){} select(){}
 }
@@ -47,6 +48,13 @@ try{
  assert.equal(nodes.get('ebiText').value,'');
  globalThis.createImageBitmap=async()=>({width:2,height:2,close(){}});await chat.attachImage(new Blob(['image'],{type:'image/jpeg'}),{name:'지도 배치.jpg'});
  assert.equal(nodes.get('ebiFilesList').children[0].children[1].children[0].textContent,'지도 배치.png','Normalized image MIME and filename extension agree');assert.match(nodes.get('ebiCount').textContent,/첨부 1\/8/);
+ const mapImage=new Blob(['capture'],{type:'image/jpeg'}),mapOptions={mapCapture:true,note:'배치 확인'};
+ await assert.rejects(chat.attachImage(mapImage,mapOptions),/지도 화면이 캡처되지 않았습니다/);
+ sampledPixels=new Uint8ClampedArray([255,255,255,0]);
+ await assert.rejects(chat.attachImage(mapImage,mapOptions),/지도 화면이 캡처되지 않았습니다/);
+ assert.match(nodes.get('ebiCount').textContent,/첨부 1\/8/);assert.equal(nodes.get('ebiText').value,'');
+ sampledPixels=new Uint8ClampedArray([12,48,86,255]);
+ await chat.attachImage(mapImage,mapOptions);assert.match(nodes.get('ebiCount').textContent,/첨부 2\/8/);assert.equal(nodes.get('ebiText').value,'배치 확인');
 
  chat.clear();assert.equal(panel.hidden,true);
 
