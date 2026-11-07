@@ -121,5 +121,18 @@ try{
  assert.equal(active()[0].children[0].children.at(-1).textContent,'현재 보완 지시');
  chat.clear();mount();await settle();
  assert.equal(status(),'작업 대기');assert.equal(active()[0].dataset.messageId,sentId);assert.equal(postCount,1);
+ chat.clear();
+ const oldVersion='2026-11-07T04:00:00.000Z',batchVersion='2026-11-07T04:01:00.000Z';
+ data=snapshot('received');data.job.report_version=batchVersion;
+ let batchRefreshes=0;
+ chat=createEbiChat({api,toast:()=>{},onWorkChange:()=>{
+  batchRefreshes++;
+  chat.report({report:{...report('accepted').report,updated_at:batchVersion}},'시험 승인자');
+ }});
+ chat.mount(new Element());
+ chat.report({report:{...report('review').report,updated_at:oldVersion}},'시험 승인자');await settle();
+ assert.equal(batchRefreshes,1,'The first chat snapshot refreshes a report just adopted by a batch');
+ data=snapshot('working');data.job.report_version=batchVersion;
+ await reload();assert.equal(status(),'Codex 작업 중');assert.equal(batchRefreshes,1);
  console.log('PASS: authoritative lifecycle states, stale polls, instruction linkage, saved-request recovery, message deduplication and reload');
 }finally{chat?.stop();globalThis.document=nativeDocument;globalThis.createImageBitmap=nativeBitmap;}

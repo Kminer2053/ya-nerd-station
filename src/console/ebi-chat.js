@@ -245,7 +245,8 @@ export function createEbiChat({api,toast,onWorkChange,onOpenDraft}){
    if(saved)clearSavedInput(id,s,'서버에 저장된 지시를 확인했습니다.');
    renderHistory();
    renderStatus();
-   if(changed||saved)await refreshWork(id);
+   const newerJob=Date.parse(data.job?.report_version)>Date.parse(context.report.updated_at);
+   if(changed||saved||newerJob)await refreshWork(id);
   }catch(error){
    if(valid()&&error.name!=='AbortError')s.syncError='대화 기록을 불러오지 못했습니다. 입력을 유지한 채 다시 시도할 수 있습니다. '+error.message;
   }finally{
