@@ -26,13 +26,23 @@ async function copyRequest(field,toast,error){
 }
 export function bindDotsLink({api,toast,isCurrent},reportId){
  const panel=document.querySelector('#dotsLinkPanel');if(!panel)return;
+ const fold=panel.closest('details#connectionHost'),foldStatus=fold?.querySelector('#connectionFoldStatus');
+ const setFoldStatus=text=>{if(foldStatus&&foldStatus.textContent!==text)foldStatus.textContent=text;};
  const status=panel.querySelector('#dotsLinkStatus'),consent=panel.querySelector('#dotsLinkConsent'),create=panel.querySelector('#dotsLinkCreate'),revoke=panel.querySelector('#dotsLinkRevoke'),reload=panel.querySelector('#dotsLinkReload'),error=panel.querySelector('#dotsLinkError'),box=panel.querySelector('#dotsLinkCodeBox'),field=panel.querySelector('#dotsLinkRequest');
  panel._stopLinkPoll?.();const cycle=panel._linkCycle=(panel._linkCycle||0)+1;let pollTimer;panel._stopLinkPoll=()=>{clearTimeout(pollTimer);panel._linkCycle++;};
  let busy=false,loaded=false,links=[];
  const current=()=>panel._linkCycle===cycle&&panel.isConnected&&isCurrent(reportId);
  const buttons=()=>{create.disabled=busy||!loaded||!consent.checked;revoke.disabled=busy||!loaded||!links.some(l=>['pending','connected'].includes(l.status));reload.disabled=busy;consent.disabled=busy;};
  const load=async()=>{busy=true;buttons();error.textContent='';try{
-  const v=await api('/api/console/dots-link');if(!current())return;links=Array.isArray(v.links)?v.links:[];loaded=true;
+  const v=await api('/api/console/dots-link');if(!current())return;
+  if(!Array.isArray(v.links))throw Error('연결 상태 응답을 확인하지 못했습니다.');
+  links=v.links;loaded=true;
+  const connected=links.some(link=>link.status==='connected');
+  if(fold&&fold.dataset.connected!==String(connected)){
+   fold.dataset.connected=String(connected);
+   fold.open=!connected;
+  }
+  setFoldStatus(connected?'연결됨':'연결 필요');
   const states={connected:'연결됨',pending:'인증 대기',expired:'접근 만료',code_expired:'코드 만료',revoked:'해제됨'};
   panel.querySelector('#dotsServer').textContent=(v.server?.environment==='local'?'로컬 시험 서버':'운영 서버')+' · '+(v.server?.origin||location.origin)+' · 이 서버에서 발급한 코드를 같은 Toolkit에 연결하세요.';
   status.innerHTML=links.length?'<ul>'+links.map(l=>'<li>'+esc(l.label||'Codex 작업자')+' · '+esc(states[l.status]||'상태 확인 필요')+(l.account_ref?' · GPT 계정 구분값 '+esc(l.account_ref):'')+' · '+esc(expiry(l.expires_at))+' 만료'+(['connected','pending'].includes(l.status)?' <button type="button" data-disconnect="'+esc(l.id)+'">이 연결 해제</button>':'')+'</li>').join('')+'</ul>':'연결된 GPT 계정이 없습니다. 최초 연결 인증 후 이 화면에서 작업하세요.';
@@ -40,7 +50,7 @@ export function bindDotsLink({api,toast,isCurrent},reportId){
   let output=panel.querySelector('#runnerStatus');if(!output){output=document.createElement('p');output.id='runnerStatus';output.className='fine';status.after(output);}
   output.textContent=runner?(runner.runners.some(r=>r.online&&(!reportId||!r.report_id||r.report_id===reportId))?'자동 작업자 온라인 · 지시의 접수와 실행은 채팅에서 확인하세요.':'자동 작업자 오프라인 · 최초 인증 안내에서 개인 PC 작업자를 연결하세요.'):'';
 
- }catch(e){if(current()){loaded=false;error.textContent=e.message;status.textContent='연결 상태를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.';}}
+ }catch(e){if(current()){loaded=false;error.textContent=e.message;status.textContent='연결 상태를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.';setFoldStatus('연결 상태 확인 지연');}}
  finally{busy=false;if(current()){buttons();clearTimeout(pollTimer);pollTimer=setTimeout(load,8000);}}};
  consent.onchange=buttons;reload.onclick=load;
  status.onclick=async e=>{const button=e.target.closest('[data-disconnect]');if(!button||busy)return;busy=true;buttons();try{await api('/api/console/dots-link/revoke',{method:'POST',body:JSON.stringify({confirm:true,id:button.dataset.disconnect})});field.value='';box.hidden=true;await load();toast('선택한 계정의 작업 접근을 해제했습니다.');}catch(error){toast(error.message);}finally{busy=false;buttons();}};

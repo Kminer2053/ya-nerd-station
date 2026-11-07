@@ -21,5 +21,5 @@ export function modelMarkup(s,image){if(s.parts)return partsMarkup(s,typeof imag
 export function artifactReviewMarkup(meta,photos=[]){
  const faces=Object.entries(meta?.faces||{}).filter(([,f])=>f.artifact_id&&f.provenance);if(!faces.length)return '';
  const labels={front:'정면',left:'좌측면',right:'우측면',back:'후면'};
- return '<section class="estimate-note"><b>사진 출처 · 생성과 보정 근거</b>'+faces.map(([side,f])=>'<div><p><strong>'+esc(labels[side]||side)+' · '+(f.provenance.method==='generated'?'생성 이미지':'사진 보정')+'</strong></p><p>출처: '+esc((f.source_photo_ids||[]).map(id=>{const index=photos.findIndex(p=>p.id===id);return index>=0?'제보 사진 '+(index+1):'대화에 보낸 사진';}).join(', '))+'</p><p>근거: '+esc(f.provenance.evidence)+'</p><p>한계: '+esc(f.provenance.uncertainty)+'</p></div>').join('')+'<p class="fine">저장된 모든 면을 확대해 위치·내용과 개인정보를 확인한 뒤 최종 승인하세요.</p></section>';
+ return '<section class="estimate-note"><h4>사진 출처 · 생성과 보정 근거</h4>'+faces.map(([side,f])=>'<div><p><strong>'+esc(labels[side]||side)+' · '+(f.provenance.method==='generated'?'생성 이미지':'사진 보정')+'</strong></p><p>출처 · '+esc((f.source_photo_ids||[]).map(id=>{const index=photos.findIndex(p=>p.id===id);return index>=0?'제보 사진 '+(index+1):'대화에 보낸 사진';}).join(', '))+'</p><p>근거 · '+esc(f.provenance.evidence)+'</p><p>한계 · '+esc(f.provenance.uncertainty)+'</p></div>').join('')+'</section>';
 }

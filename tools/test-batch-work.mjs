@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync,readdirSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
+import {encode} from 'fast-png';
 import {batchConsoleApi,runDueBatches} from '../server/batch-work.js';
 import {d1Adapter} from './sqlite-adapter.mjs';
 import server from '../server/index.js';
 import {runnerAgentTool} from '../server/agent-runner.js';
 import {chatDetail,chatConsoleApi} from '../server/work-chat.js';
+import {structurePixels} from '../src/reports.js';
 const RealDate=Date;let clock=Date.now();globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}};
 const migrations=readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort().map(f=>readFileSync('drizzle/'+f,'utf8'));
 function fixture(){
@@ -14,7 +16,7 @@ function fixture(){
  const at=new Date().toISOString(),until=new Date(clock+864e5).toISOString();
  for(const actor of ['batch-a','batch-b'])sqlite.prepare('INSERT INTO agent_links (id,actor,code_hash,principal_id,label,created_at,code_expires_at,expires_at,redeemed_at) VALUES (?,?,?,?,?,?,?,?,?)').run(randomUUID(),actor,randomUUID(),'synthetic-'+actor,'test',at,until,until,at);
  const helpers={stationData:async()=>({slots:[]}),imageInfo:()=>{throw Error('unexpected image decoding');}};
- const report=({station='S202103',status='review',floor='2F'}={})=>{const id=randomUUID();sqlite.prepare("INSERT INTO reports (id,station_key,floor,position,type,description,status,reporter_hash,history,created_at,updated_at) VALUES (?,?,?,?,?,'synthetic evidence',?,'synthetic','[]',?,?)").run(id,station,floor,JSON.stringify([126.9706,37.5539,36.2]),'other',status,at,at);return id;};
+ const report=({station='S202103',status='review',floor='2F',position=[126.9706,37.5539,36.2]}={})=>{const id=randomUUID();sqlite.prepare("INSERT INTO reports (id,station_key,floor,position,type,description,status,reporter_hash,history,created_at,updated_at) VALUES (?,?,?,?,?,'synthetic evidence',?,'synthetic','[]',?,?)").run(id,station,floor,JSON.stringify(position),'other',status,at,at);return id;};
  const api=async(v,actor='batch-a')=>{const r=await batchConsoleApi(new Request('https://synthetic.test/api/console/batch-work',{method:v?'POST':'GET'}),env,{...helpers,me:{approver:actor},json:(data,status=200)=>Response.json(data,{status}),body:async()=>v});return {status:r.status,data:await r.json()};};
  const run=(report_ids,extra={})=>({action:'run',request_id:randomUUID(),report_ids,notes:'실제 사진을 먼저 확인',confirm:true,...extra});
  const drain=actor=>runDueBatches(env,actor||'batch-a',helpers);
@@ -70,8 +72,20 @@ try{
 
  // Crash after chat.start but before item ack recovers the saved message/job.
  const recovered=make(),recoverRequest=recovered.run([recovered.report()]);await recovered.api(recoverRequest);await recovered.drain();const saved=recovered.sqlite.prepare('SELECT id,job_id FROM batch_items').get();recovered.sqlite.prepare("UPDATE batch_items SET status='enqueuing',job_id=NULL,updated_at=? WHERE id=?").run(new Date(clock-120001).toISOString(),saved.id);await recovered.drain();assert.equal(recovered.sqlite.prepare('SELECT job_id FROM batch_items').get().job_id,saved.job_id);assert.equal(recovered.sqlite.prepare('SELECT count(*) AS n FROM report_jobs').get().n,1);
- // Exercise real MCP claims, starts, and question submissions for two reports.
- const work=make(),station='S201801',reportIds=[work.report({station}),work.report({station})];
+ // Exercise real MCP claims, questions, and final private drafts for two reports in one run.
+ const work=make(),station='S201801',position=[127.43459,36.33223,60.34];
+ const reportIds=[work.report({station,position}),work.report({station,position})];
+ const files=new Map();
+ work.env.UPLOADS={async put(key,bytes){files.set(key,bytes);},async get(key){return files.has(key)?{body:files.get(key)}:null;},async delete(key){files.delete(key);}};
+ const png=(width,height)=>encode({width,height,data:new Uint8Array(width*height*4).fill(255),channels:4,depth:8});
+ const photo=png(64,32),photoIds=new Map();
+ for(const reportId of reportIds){
+  const photoId=randomUUID();
+  photoIds.set(reportId,photoId);
+  files.set('report/'+photoId,photo);
+  work.sqlite.prepare('INSERT INTO report_photos (id,report_id,mime,size,width,height,view_role,created_at) VALUES (?,?,?,?,?,?,?,?)')
+   .run(photoId,reportId,'image/png',photo.length,64,32,'front',new Date().toISOString());
+ }
  const queued=work.run(reportIds,{station_key:station});
  const getRun=async()=> (await work.api()).data.runs.find(run=>run.id===queued.request_id);
  const principal='synthetic-batch-a',link=work.sqlite.prepare("SELECT * FROM agent_links WHERE actor='batch-a'").get();
@@ -116,20 +130,49 @@ try{
  }
  assert.equal((await getRun()).counts.needs_info,2);
  assert.deepEqual(new Set((await getRun()).items.map(item=>item.report_id)),new Set(reportIds));
- const first=reportIds[0],previous=(await chatDetail(work.env,first,'batch-a')).job.id;
- const follow=await chatConsoleApi(new Request('https://synthetic.test/api/console/reports/'+first+'/chat',{method:'POST'}),work.env,null,{
-  json:(data,status)=>Response.json(data,{status}),me:{approver:'batch-a'},
-  body:async()=>({request_id:randomUUID(),text:'이 사진의 가로 폭은 2미터입니다.',attachment_ids:[]}),
-  audit:async()=>{},
- });
- const next=(await follow.json()).job;
- assert.equal(next.execution.parent_job_id,previous);
- assert.equal(next.execution.state,'waiting');
- const result=(await getRun()).items.find(item=>item.report_id===first);
- assert.equal(result.job_id,previous);
- assert.equal(result.current_job_id,next.id);
- assert.equal(result.state,'waiting','batch follows its report revision instead of displaying the old cancelled job');
+ const structure={name:'합성 검증 안내대',floor:'2F',position,size:[2,.6,1],heading:90,color:'#cccccc',dimension_basis:'estimated'};
+ const image='data:image/png;base64,'+Buffer.from(png(...structurePixels(structure.size))).toString('base64');
+ const provenance={method:'rectified',evidence:'합성 정면 사진에 맞춘 비공개 초안',uncertainty:'실측하지 않은 테스트용 추정',privacy_reviewed:true};
+ const drafts=new Map();
+ for(const [index,reportId] of reportIds.entries()){
+  const previous=(await chatDetail(work.env,reportId,'batch-a')).job.id;
+  const follow=await chatConsoleApi(new Request('https://synthetic.test/api/console/reports/'+reportId+'/chat',{method:'POST'}),work.env,null,{
+   json:(data,status)=>Response.json(data,{status}),me:{approver:'batch-a'},
+   body:async()=>({request_id:randomUUID(),text:'이 사진의 가로 폭은 2미터입니다.',attachment_ids:[]}),
+   audit:async()=>{},
+  });
+  const next=(await follow.json()).job;
+  assert.equal(next.execution.parent_job_id,previous);
+  assert.equal(next.execution.state,'waiting');
+  const item=(await getRun()).items.find(item=>item.report_id===reportId);
+  assert.equal(item.job_id,previous);
+  assert.equal(item.current_job_id,next.id);
+  assert.equal(item.state,'waiting','batch follows its report revision instead of displaying the old cancelled job');
+  const token=['d','e'][index].repeat(64);
+  const {job}=await invoke('toolkit_runner_claim',{runner_id:generalRunner,request_id:randomUUID(),lease_token:token});
+  assert.equal(job.job_id,next.id);
+  const lease={runner_id:generalRunner,job_id:next.id,lease_token:token};
+  const execute=(tool,args)=>invoke('toolkit_runner_execute',{...lease,tool,arguments:{job_id:next.id,...args}});
+  await invoke('toolkit_runner_begin',lease);
+  const artifact=await execute('toolkit_store_draft_artifact',{request_id:randomUUID(),source_photo_ids:[photoIds.get(reportId)],image,provenance});
+  const plan={kind:'structure',structure,structure_provenance:{evidence:provenance.evidence,uncertainty:provenance.uncertainty},confidence:.95,questions:[],hide_ids:[],faces:[{side:'front',artifact_id:artifact.artifact_id}]};
+  const submitted=await execute('toolkit_submit_plan',{plan});
+  assert.equal(submitted.status,'draft');
+  const finished=await invoke('toolkit_runner_finish',{...lease,outcome:'draft'});
+  assert.equal(finished.outcome,'draft');
+  const proposal=work.sqlite.prepare('SELECT report_ids,status,meta FROM proposals WHERE id=?').get(submitted.proposal_id);
+  assert.deepEqual(JSON.parse(proposal.report_ids),[reportId]);
+  assert.equal(proposal.status,'draft');
+  assert.equal(JSON.parse(proposal.meta).faces.front.artifact_id,artifact.artifact_id);
+  assert(files.has('proposal/'+submitted.proposal_id));
+  assert.equal((await server.fetch(new Request('https://synthetic.test/api/public/proposal-images/'+submitted.proposal_id),work.env)).status,404);
+  drafts.set(reportId,submitted.proposal_id);
+ }
+ const completed=await getRun();
+ assert.equal(completed.counts.draft_submitted,2);
+ assert.deepEqual(new Map(completed.items.map(item=>[item.report_id,item.proposal_id])),drafts);
+ assert.equal(new Set(drafts.values()).size,2);
  assert.equal(work.sqlite.prepare('SELECT count(*) AS n FROM station_layers').get().n,0);
  assert(!JSON.stringify(await getRun()).includes('token_hash'));
- console.log('PASS batch real chat and MCP with memory D1: two sequential claims and tracked results, scoped workers, manual/interval, idempotency, cancellation, no approval');
+ console.log('PASS batch real chat and MCP with memory D1/R2: two sequential questions and private artifact-backed drafts, scoped workers, manual/interval, idempotency, cancellation, no approval');
 }finally{globalThis.Date=RealDate;for(const f of fixtures)f.sqlite.close();}
